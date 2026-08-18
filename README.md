@@ -2,22 +2,26 @@
 
 Drop-in onboarding flows for CLI tools. You pick the nodes and their order — the look is handled.
 
+```bash
+npx onboard-kit demo
+```
+
 ```ts
-import { onboard, welcome, check, choice, secret, summary, task, done } from "onboard-kit";
+import { onboard } from "onboard-kit";
 
 await onboard({
   name: "MyTool",
   nodes: [
-    welcome({ subtitle: "Let's get you set up." }),
-    check({ label: "Node 20+", run: () => Number(process.versions.node.split(".")[0]) >= 20 }),
-    choice({ id: "provider", label: "Which provider?", options: [
-      { value: "openai", label: "OpenAI", hint: "gpt-4o" },
-      { value: "local", label: "Local", hint: "via Ollama" },
-    ]}),
-    secret({ id: "apiKey", label: "API key", when: (a) => a.provider !== "local" }),
-    summary(),
-    task({ label: "Writing config", run: (a) => writeConfig(a) }),
-    done({ next: [{ cmd: "mytool start", desc: "launch the daemon" }] }),
+    { node: "welcome", subtitle: "Let's get you set up." },
+    { node: "check", label: "Node 20+", run: () => Number(process.versions.node.split(".")[0]) >= 20 },
+    { node: "choice", id: "provider", label: "Which provider?", options: [
+        { value: "openai", label: "OpenAI", hint: "gpt-4o" },
+        { value: "local",  label: "Local",  hint: "via Ollama" },
+    ]},
+    { node: "secret", id: "apiKey", label: "API key", when: (a) => a.provider !== "local" },
+    { node: "summary" },
+    { node: "task", label: "Writing config", run: (a) => writeConfig(a) },
+    { node: "done", next: [{ cmd: "mytool start", desc: "launch the daemon" }] },
   ],
 });
 ```
@@ -51,11 +55,11 @@ await onboard({
 
 ## It's a template, not a framework
 
-There is no theme object, no colour config, no custom renderers, and no way to author your own node. That is the point. The spacing, symbols, rails, step counters and review layout are decided once, here, so your onboarding looks good without you making a single visual decision.
+There is no theme object, no colour config, no custom renderers, and no way to author your own node type. That is the point. Spacing, symbols, rails, step counters and the review layout are decided once, here, so your onboarding looks good without you making a single visual decision.
 
 What you control is which nodes run and in what order. That's the whole API.
 
-The one exception is identity — `name`, `logo`, and `accent` (six presets, not free-form hex), because otherwise every tool's onboarding would be identical.
+The one exception is identity — `name`, `logo`, and `accent` (six presets, not free-form hex), because otherwise every tool's onboarding would look identical.
 
 ## Install
 
@@ -67,54 +71,71 @@ bun add onboard-kit @clack/prompts
 
 ## The node catalog
 
-Twelve nodes. That's all of them.
+Twelve nodes, all plain objects discriminated on `node`. That's all of them.
 
 **Display** — render only, no answer
 
 | | |
 |---|---|
-| `welcome({ title?, subtitle? })` | Opening banner |
-| `note({ title?, body })` | Boxed callout |
-| `done({ message?, next? })` | Closing frame with a command list |
+| `{ node: "welcome", title?, subtitle? }` | Opening banner |
+| `{ node: "note", title?, body }` | Boxed callout |
+| `{ node: "done", message?, next? }` | Closing frame with a command list |
 
 **Question** — produce an answer under `id`
 
 | | |
 |---|---|
-| `choice({ id, label, options, default?, hint? })` | Pick one (auto-upgrades to autocomplete past 10 options) |
-| `multiChoice({ id, label, options, default?, min?, max? })` | Pick any number |
-| `confirm({ id, label, default? })` | Yes / no |
-| `text({ id, label, placeholder?, default?, validate? })` | Free text |
-| `secret({ id, label, validate? })` | Masked; never persisted, always masked in review |
-| `pick({ id, label, select, root? })` | File or directory path |
+| `{ node: "choice", id, label, options, default?, hint? }` | Pick one (auto-upgrades to autocomplete past 10 options) |
+| `{ node: "multiChoice", id, label, options, default?, min?, max? }` | Pick any number |
+| `{ node: "confirm", id, label, default? }` | Yes / no |
+| `{ node: "text", id, label, placeholder?, default?, validate? }` | Free text |
+| `{ node: "secret", id, label, validate? }` | Masked; never persisted, always masked in review |
+| `{ node: "pick", id, label, select, root? }` | File or directory path |
 
 **Work** — side effects, with the template's spinner
 
 | | |
 |---|---|
-| `check({ label, run, fix?, optional? })` | Environment gate. Fails → prints `fix` and halts. `optional` warns and continues |
-| `task({ label, run })` | Does the work. Receives all answers |
-| `summary({ title?, confirm? })` | The review table — derives itself from the questions above it |
+| `{ node: "check", label, run, fix?, optional? }` | Environment gate. Fails → prints `fix` and halts. `optional` warns and continues |
+| `{ node: "task", label, run }` | Does the work. Receives all answers |
+| `{ node: "summary", title?, confirm? }` | The review table — derives itself from the questions above it |
 
 Every node also accepts `when(answers)`, the only control flow there is. No loops, no branching, no sub-flows.
 
-## Typed answers, inferred
+## Typed answers
 
-The answers object is derived from your node list. No annotations, no duplicate interface:
+**By default the answers type is inferred from your node list** — no annotations, no duplicate interface:
 
 ```ts
 const result = await onboard({ name: "MyTool", nodes: [
-  choice({ id: "provider", label: "P", options: [{ value: "openai" }, { value: "anthropic" }] }),
-  secret({ id: "apiKey", label: "K", when: (a) => a.provider !== "local" }),
+  { node: "choice", id: "provider", label: "P", options: [{ value: "openai" }, { value: "anthropic" }] },
+  { node: "secret", id: "apiKey", label: "K", when: (a) => a.provider !== "local" },
 ]});
 
 if (result.status === "completed") {
   result.answers.provider;  // "openai" | "anthropic"
-  result.answers.apiKey;    // string | undefined  — optional, because it's guarded by `when`
+  result.answers.apiKey;    // string | undefined — optional, because it's guarded by `when`
 }
 ```
 
 A `when`-guarded node produces an *optional* key, because it genuinely may never be asked.
+
+**Pass an explicit type and the callbacks get typed too:**
+
+```ts
+type Answers = { provider: "openai" | "anthropic"; apiKey: string };
+
+await onboard<Answers>({
+  name: "MyTool",
+  nodes: [
+    { node: "choice", id: "provider", label: "P", options: [{ value: "openai" }] },
+    { node: "task", label: "Write", run: (a) => writeConfig(a.provider, a.apiKey) },
+    //                                     ^ fully typed
+  ],
+});
+```
+
+This is why nodes are object literals rather than constructor functions. A constructor call resolves its own generics before `onboard()` ever sees the array, so its callbacks can never be typed against sibling nodes. Contextual typing *does* reach into object literals.
 
 ## It works without a TTY
 
@@ -124,7 +145,7 @@ The same flow definition drives both the interactive wizard and CI. Each questio
 env var  →  default  →  prompt (interactive only)
 ```
 
-In CI or a pipe, questions read from `<NAME>_<ID>` — `MYTOOL_API_KEY` for `secret({ id: "apiKey" })` under `name: "MyTool"`. Anything unresolved returns `needs-input` naming the exact variable. It never hangs waiting for input nobody can give:
+In CI or a pipe, questions read from `<NAME>_<ID>` — `MYTOOL_API_KEY` for `{ node: "secret", id: "apiKey" }` under `name: "MyTool"`. Anything unresolved returns `needs-input` naming the exact variable. It never hangs waiting for input nobody can give:
 
 ```
 Cannot continue without input.
@@ -161,6 +182,19 @@ type OnboardResult<A> =
   | { status: "failed";      error: unknown; atNode: string };
 ```
 
+Don't want to switch on seven cases? Set `throwOnFailure: true` and the four failure outcomes throw `OnboardError` (carrying the original `result`) instead:
+
+```ts
+try {
+  const { answers } = await onboard({ name: "MyTool", throwOnFailure: true, nodes: [...] });
+} catch (error) {
+  if (error instanceof OnboardError) console.error(error.message);
+  process.exit(1);
+}
+```
+
+There's also `isFailure(result)` if you'd rather narrow than throw.
+
 ## Need something the catalog doesn't have?
 
 Use clack directly. onboard-kit is a layer over it, not a wall around it — the rail is the same, so it looks seamless:
@@ -181,7 +215,7 @@ bun install
 bun run check     # typechecks src and tests
 bun test
 bun run build
-bun run demo      # the full flow above, interactively
+bun run demo
 ```
 
 ## License

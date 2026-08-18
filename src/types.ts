@@ -1,24 +1,27 @@
 /**
- * Node descriptors and the type-level machinery that infers an answers object
- * from a node list.
+ * Nodes are plain object literals, discriminated on `node`.
  *
- * Nodes are inert data. Constructing one performs no I/O and renders nothing —
- * the engine in `run.ts` interprets them. That is what lets the engine reason
- * about a flow (which steps are outstanding, what a non-interactive run needs)
- * without executing it.
+ * They are inert data: no constructors, no I/O, nothing rendered. The engine
+ * in `run.ts` interprets them, which is what lets it reason about a flow
+ * (which questions are outstanding, what a non-interactive run needs) without
+ * executing it.
+ *
+ * Literals rather than constructor functions is a deliberate choice. A
+ * constructor call resolves its own generics before `onboard()` ever sees the
+ * array, so its callbacks can never be typed against sibling nodes. Contextual
+ * typing *does* flow into object literals, so `onboard<Answers>({...})` types
+ * every `run` and `when` callback correctly — which no constructor-based API
+ * can do.
  */
 
 /**
- * The loose shape handed to `when` and `run` callbacks.
+ * The default shape for `when` and `run` callbacks.
  *
- * A node is constructed before the flow that contains it exists, so it cannot
- * know the full answers type. Callbacks default to this bag; pass an explicit
- * type argument (`task<MyAnswers>({...})`) when you want the callback typed.
+ * Without an explicit type argument on `onboard`, callbacks receive this loose
+ * bag. Pass one — `onboard<Answers>({...})` — and they are fully typed.
  */
 // biome-ignore lint/suspicious/noExplicitAny: intentional escape hatch, see above.
 export type AnswerBag = Record<string, any>;
-
-export type When = (answers: AnswerBag) => boolean;
 
 export interface NodeOption<V extends string = string> {
 	readonly value: V;
@@ -31,153 +34,141 @@ export interface NextEntry {
 	readonly desc?: string;
 }
 
-/**
- * Marks a node that contributes an answer, carrying its value type and
- * whether that answer is conditional.
- *
- * `Opt` is `true` for nodes declared with `when`, which makes their key
- * optional in the inferred answers object — a guarded node genuinely may not
- * produce an answer, and the type should say so.
- */
-export interface AnswerCarrier<Id extends string, V, Opt extends boolean = false> {
-	readonly id: Id;
-	/** Phantom: present in the type, never at runtime. */
-	readonly __value: V;
-	/** Phantom: whether this answer is conditional. */
-	readonly __optional: Opt;
-}
-
-/** `true` when an options object declared a `when` guard. */
-export type HasWhen<O> = O extends { when: unknown } ? true : false;
+/** Returns `true` to accept the value, or a message explaining the rejection. */
+export type Validator = (value: string) => string | true;
 
 // ---------------------------------------------------------------- display
 
-export interface WelcomeNode {
-	readonly kind: "welcome";
+export interface WelcomeNode<A> {
+	readonly node: "welcome";
 	readonly title?: string;
 	readonly subtitle?: string;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface NoteNode {
-	readonly kind: "note";
+export interface NoteNode<A> {
+	readonly node: "note";
 	readonly title?: string;
 	readonly body: string;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface DoneNode {
-	readonly kind: "done";
+export interface DoneNode<A> {
+	readonly node: "done";
 	readonly message?: string;
 	readonly next?: readonly NextEntry[];
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
 // --------------------------------------------------------------- question
 
-export interface ChoiceNode<Id extends string, V extends string, Opt extends boolean = false>
-	extends AnswerCarrier<Id, V, Opt> {
-	readonly kind: "choice";
+export interface ChoiceNode<A> {
+	readonly node: "choice";
+	readonly id: string;
 	readonly label: string;
-	readonly options: readonly NodeOption<V>[];
-	readonly default?: V;
+	readonly options: readonly NodeOption[];
+	readonly default?: string;
 	readonly hint?: string;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface MultiChoiceNode<Id extends string, V extends string, Opt extends boolean = false>
-	extends AnswerCarrier<Id, V[], Opt> {
-	readonly kind: "multiChoice";
+export interface MultiChoiceNode<A> {
+	readonly node: "multiChoice";
+	readonly id: string;
 	readonly label: string;
-	readonly options: readonly NodeOption<V>[];
-	readonly default?: readonly V[];
+	readonly options: readonly NodeOption[];
+	readonly default?: readonly string[];
 	readonly min?: number;
 	readonly max?: number;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface ConfirmNode<Id extends string, Opt extends boolean = false> extends AnswerCarrier<Id, boolean, Opt> {
-	readonly kind: "confirm";
+export interface ConfirmNode<A> {
+	readonly node: "confirm";
+	readonly id: string;
 	readonly label: string;
 	readonly default?: boolean;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface TextNode<Id extends string, Opt extends boolean = false> extends AnswerCarrier<Id, string, Opt> {
-	readonly kind: "text";
+export interface TextNode<A> {
+	readonly node: "text";
+	readonly id: string;
 	readonly label: string;
 	readonly placeholder?: string;
 	readonly default?: string;
-	readonly validate?: (value: string) => string | true;
-	readonly when?: When;
+	readonly validate?: Validator;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface SecretNode<Id extends string, Opt extends boolean = false> extends AnswerCarrier<Id, string, Opt> {
-	readonly kind: "secret";
+export interface SecretNode<A> {
+	readonly node: "secret";
+	readonly id: string;
 	readonly label: string;
-	readonly validate?: (value: string) => string | true;
-	readonly when?: When;
+	readonly validate?: Validator;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface PickNode<Id extends string, Opt extends boolean = false> extends AnswerCarrier<Id, string, Opt> {
-	readonly kind: "pick";
+export interface PickNode<A> {
+	readonly node: "pick";
+	readonly id: string;
 	readonly label: string;
 	readonly select: "file" | "directory";
 	readonly root?: string;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
 // ------------------------------------------------------------------- work
 
-export interface CheckNode {
-	readonly kind: "check";
+export interface CheckNode<A> {
+	readonly node: "check";
 	readonly label: string;
-	readonly run: (answers: AnswerBag) => boolean | Promise<boolean>;
-	/** Shown when the check fails. Omit for `optional` checks. */
+	readonly run: (answers: A) => boolean | Promise<boolean>;
+	/** Shown when the check fails. */
 	readonly fix?: string;
 	/** Warn and continue instead of halting the flow. */
 	readonly optional?: boolean;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface TaskNode {
-	readonly kind: "task";
+export interface TaskNode<A> {
+	readonly node: "task";
 	readonly label: string;
-	readonly run: (answers: AnswerBag) => unknown | Promise<unknown>;
-	readonly when?: When;
+	readonly run: (answers: A) => unknown | Promise<unknown>;
+	readonly when?: (answers: A) => boolean;
 }
 
-export interface SummaryNode {
-	readonly kind: "summary";
+export interface SummaryNode<A> {
+	readonly node: "summary";
 	readonly title?: string;
 	/** Gate continuing on an explicit yes. Defaults to `true`. */
 	readonly confirm?: boolean;
-	readonly when?: When;
+	readonly when?: (answers: A) => boolean;
 }
 
 // ------------------------------------------------------------------ union
 
-export type QuestionNode =
-	| ChoiceNode<string, string, boolean>
-	| MultiChoiceNode<string, string, boolean>
-	| ConfirmNode<string, boolean>
-	| TextNode<string, boolean>
-	| SecretNode<string, boolean>
-	| PickNode<string, boolean>;
+export type QuestionNode<A = AnswerBag> =
+	| ChoiceNode<A>
+	| MultiChoiceNode<A>
+	| ConfirmNode<A>
+	| TextNode<A>
+	| SecretNode<A>
+	| PickNode<A>;
 
-export type Node =
-	| WelcomeNode
-	| NoteNode
-	| DoneNode
-	| QuestionNode
-	| CheckNode
-	| TaskNode
-	| SummaryNode;
+export type Node<A = AnswerBag> =
+	| WelcomeNode<A>
+	| NoteNode<A>
+	| DoneNode<A>
+	| QuestionNode<A>
+	| CheckNode<A>
+	| TaskNode<A>
+	| SummaryNode<A>;
 
-const QUESTION_KINDS = new Set(["choice", "multiChoice", "confirm", "text", "secret", "pick"]);
+const QUESTION_NODES = new Set(["choice", "multiChoice", "confirm", "text", "secret", "pick"]);
 
 export function isQuestion(node: Node): node is QuestionNode {
-	return QUESTION_KINDS.has(node.kind);
+	return QUESTION_NODES.has(node.node);
 }
 
 // -------------------------------------------------------- answer inference
@@ -186,17 +177,26 @@ type UnionToIntersection<U> = (U extends unknown ? (x: U) => void : never) exten
 	? I
 	: never;
 
-type EntryOf<N> = N extends AnswerCarrier<infer Id, infer V, infer Opt>
-	? Opt extends true
-		? { [K in Id]?: V }
-		: { [K in Id]: V }
-	: never;
+/** A `when` guard makes the key optional: the question may never be asked. */
+type Entry<N, Id extends string, V> = N extends { when: unknown } ? { [K in Id]?: V } : { [K in Id]: V };
+
+type ValueOf<O> = O extends { value: infer V } ? V : never;
+
+type EntryOf<N> = N extends { node: "choice"; id: infer Id extends string; options: readonly (infer O)[] }
+	? Entry<N, Id, ValueOf<O>>
+	: N extends { node: "multiChoice"; id: infer Id extends string; options: readonly (infer O)[] }
+		? Entry<N, Id, ValueOf<O>[]>
+		: N extends { node: "confirm"; id: infer Id extends string }
+			? Entry<N, Id, boolean>
+			: N extends { node: "text" | "secret" | "pick"; id: infer Id extends string }
+				? Entry<N, Id, string>
+				: never;
 
 export type Prettify<T> = { [K in keyof T]: T[K] } & {};
 
 /**
  * Derives the answers object from a node list — for example
- * `{ provider: "openai" | "anthropic"; apiKey?: string }`, where `apiKey`
- * is optional because its node declared a `when` guard.
+ * `{ provider: "openai" | "anthropic"; apiKey?: string }`, where `apiKey` is
+ * optional because its node declared a `when` guard.
  */
 export type AnswersOf<Nodes extends readonly unknown[]> = Prettify<UnionToIntersection<EntryOf<Nodes[number]>>>;

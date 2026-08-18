@@ -1,12 +1,11 @@
 import { describe, expect, test } from "bun:test";
-import { check, choice, confirm, done, multiChoice, secret, summary, task, welcome } from "./nodes.js";
-import { envNameFor, onboard, type Output } from "./run.js";
+import { envNameFor, onboard, OnboardError, type Output } from "./run.js";
 import { memoryState } from "./state.js";
 
 /**
- * The engine is exercised entirely in non-interactive mode, which is also the
- * mode CI users hit — so these tests cover the path most likely to be broken
- * and least likely to be manually noticed.
+ * The engine is exercised in non-interactive mode, which is also the mode CI
+ * users hit — the path most likely to break and least likely to be noticed
+ * by hand.
  */
 
 function sink(): Output & { text: string } {
@@ -39,12 +38,13 @@ describe("non-interactive resolution", () => {
 			state: false,
 			env: { MYTOOL_PROVIDER: "anthropic", MYTOOL_API_KEY: "sk-live" },
 			nodes: [
-				choice({
+				{
+					node: "choice",
 					id: "provider",
 					label: "Provider",
 					options: [{ value: "openai" }, { value: "anthropic" }],
-				}),
-				secret({ id: "apiKey", label: "API key" }),
+				},
+				{ node: "secret", id: "apiKey", label: "API key" },
 			],
 		});
 
@@ -59,12 +59,13 @@ describe("non-interactive resolution", () => {
 			state: false,
 			env: {},
 			nodes: [
-				choice({
+				{
+					node: "choice",
 					id: "provider",
 					label: "Provider",
 					options: [{ value: "openai" }, { value: "anthropic" }],
 					default: "openai",
-				}),
+				},
 			],
 		});
 
@@ -81,7 +82,7 @@ describe("non-interactive resolution", () => {
 			output: out,
 			state: false,
 			env: {},
-			nodes: [secret({ id: "apiKey", label: "API key" })],
+			nodes: [{ node: "secret", id: "apiKey", label: "API key" }],
 		});
 
 		expect(result.status).toBe("needs-input");
@@ -96,12 +97,13 @@ describe("non-interactive resolution", () => {
 			state: false,
 			env: { MYTOOL_TELEMETRY: "false", MYTOOL_FEATURES: "a, b" },
 			nodes: [
-				confirm({ id: "telemetry", label: "Telemetry" }),
-				multiChoice({
+				{ node: "confirm", id: "telemetry", label: "Telemetry" },
+				{
+					node: "multiChoice",
 					id: "features",
 					label: "Features",
 					options: [{ value: "a" }, { value: "b" }, { value: "c" }],
-				}),
+				},
 			],
 		});
 
@@ -112,23 +114,20 @@ describe("non-interactive resolution", () => {
 	});
 });
 
-describe("when()", () => {
+describe("when", () => {
 	test("skips nodes whose condition is false", async () => {
 		const result = await onboard({
 			...base,
 			state: false,
 			env: { MYTOOL_PROVIDER: "local" },
 			nodes: [
-				choice({
+				{
+					node: "choice",
 					id: "provider",
 					label: "Provider",
 					options: [{ value: "local" }, { value: "openai" }],
-				}),
-				secret({
-					id: "apiKey",
-					label: "API key",
-					when: (a) => a.provider !== "local",
-				}),
+				},
+				{ node: "secret", id: "apiKey", label: "API key", when: (a) => a.provider !== "local" },
 			],
 		});
 
@@ -141,7 +140,7 @@ describe("when()", () => {
 	});
 });
 
-describe("check()", () => {
+describe("check", () => {
 	test("a failed required check blocks the flow before any task runs", async () => {
 		let taskRan = false;
 		const result = await onboard({
@@ -149,9 +148,15 @@ describe("check()", () => {
 			state: false,
 			env: {},
 			nodes: [
-				check({ label: "Node 20+", run: () => true }),
-				check({ label: "git", run: () => false, fix: "Install git" }),
-				task({ label: "Write config", run: () => { taskRan = true; } }),
+				{ node: "check", label: "Node 20+", run: () => true },
+				{ node: "check", label: "git", run: () => false, fix: "Install git" },
+				{
+					node: "task",
+					label: "Write config",
+					run: () => {
+						taskRan = true;
+					},
+				},
 			],
 		});
 
@@ -166,7 +171,7 @@ describe("check()", () => {
 			...base,
 			state: false,
 			env: {},
-			nodes: [check({ label: "git", run: () => false, optional: true })],
+			nodes: [{ node: "check", label: "git", run: () => false, optional: true }],
 		});
 
 		expect(result.status).toBe("completed");
@@ -178,12 +183,13 @@ describe("check()", () => {
 			state: false,
 			env: {},
 			nodes: [
-				check({
+				{
+					node: "check",
 					label: "probe",
 					run: () => {
 						throw new Error("boom");
 					},
-				}),
+				},
 			],
 		});
 
@@ -191,7 +197,7 @@ describe("check()", () => {
 	});
 });
 
-describe("task()", () => {
+describe("task", () => {
 	test("receives the collected answers", async () => {
 		let seen: unknown;
 		await onboard({
@@ -199,8 +205,14 @@ describe("task()", () => {
 			state: false,
 			env: { MYTOOL_PROVIDER: "openai" },
 			nodes: [
-				choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] }),
-				task({ label: "Write", run: (a) => { seen = a; } }),
+				{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+				{
+					node: "task",
+					label: "Write",
+					run: (a) => {
+						seen = a;
+					},
+				},
 			],
 		});
 
@@ -212,7 +224,15 @@ describe("task()", () => {
 			...base,
 			state: false,
 			env: {},
-			nodes: [task({ label: "Write config", run: () => { throw new Error("disk full"); } })],
+			nodes: [
+				{
+					node: "task",
+					label: "Write config",
+					run: () => {
+						throw new Error("disk full");
+					},
+				},
+			],
 		});
 
 		expect(result.status).toBe("failed");
@@ -222,12 +242,58 @@ describe("task()", () => {
 	});
 });
 
+describe("throwOnFailure", () => {
+	test("throws OnboardError carrying the result instead of returning it", async () => {
+		const attempt = onboard({
+			...base,
+			state: false,
+			throwOnFailure: true,
+			env: {},
+			nodes: [{ node: "check", label: "git", run: () => false, fix: "Install git" }],
+		});
+
+		await expect(attempt).rejects.toThrow(OnboardError);
+		await attempt.catch((error: unknown) => {
+			expect(error).toBeInstanceOf(OnboardError);
+			const failure = (error as OnboardError).result;
+			expect(failure.status).toBe("blocked");
+			if (failure.status !== "blocked") return;
+			expect(failure.failed).toEqual(["git"]);
+			expect((error as Error).message).toContain("git");
+		});
+	});
+
+	test("names the missing env vars in the thrown message", async () => {
+		const attempt = onboard({
+			...base,
+			state: false,
+			throwOnFailure: true,
+			env: {},
+			nodes: [{ node: "secret", id: "apiKey", label: "API key" }],
+		});
+
+		await expect(attempt).rejects.toThrow("MYTOOL_API_KEY");
+	});
+
+	test("does not throw on success", async () => {
+		const result = await onboard({
+			...base,
+			state: false,
+			throwOnFailure: true,
+			env: { MYTOOL_PROVIDER: "openai" },
+			nodes: [{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] }],
+		});
+
+		expect(result.status).toBe("completed");
+	});
+});
+
 describe("onboarding state", () => {
 	test("a completed flow is skipped on the next run", async () => {
 		const state = memoryState();
 		const nodes = [
-			choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] }),
-		];
+			{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+		] as const;
 		const env = { MYTOOL_PROVIDER: "openai" };
 
 		const first = await onboard({ ...base, state, env, nodes });
@@ -243,7 +309,7 @@ describe("onboarding state", () => {
 			...base,
 			state,
 			env: { MYTOOL_API_KEY: "sk-super-secret" },
-			nodes: [secret({ id: "apiKey", label: "API key" })],
+			nodes: [{ node: "secret", id: "apiKey", label: "API key" }],
 		});
 
 		const record = await state.read();
@@ -260,7 +326,7 @@ describe("onboarding state", () => {
 			state,
 			env,
 			version: 1,
-			nodes: [choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] })],
+			nodes: [{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] }],
 		});
 
 		const upgraded = await onboard({
@@ -269,8 +335,8 @@ describe("onboarding state", () => {
 			env,
 			version: 2,
 			nodes: [
-				choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] }),
-				choice({ id: "region", label: "Region", options: [{ value: "us-east" }] }),
+				{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+				{ node: "choice", id: "region", label: "Region", options: [{ value: "us-east" }] },
 			],
 		});
 
@@ -287,7 +353,9 @@ describe("onboarding state", () => {
 	});
 
 	test("state: false disables the record entirely", async () => {
-		const nodes = [choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] })];
+		const nodes = [
+			{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+		] as const;
 		const env = { MYTOOL_PROVIDER: "openai" };
 
 		const first = await onboard({ ...base, state: false, env, nodes });
@@ -308,16 +376,34 @@ describe("non-interactive output", () => {
 			state: false,
 			env: { MYTOOL_PROVIDER: "openai" },
 			nodes: [
-				welcome({ subtitle: "Let's go" }),
-				choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] }),
-				summary(),
-				task({ label: "Writing config", run: () => {} }),
-				done({ next: [{ cmd: "mytool start" }] }),
+				{ node: "welcome", subtitle: "Let's go" },
+				{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+				{ node: "summary" },
+				{ node: "task", label: "Writing config", run: () => {} },
+				{ node: "done", next: [{ cmd: "mytool start" }] },
 			],
 		});
 
 		expect(out.text).not.toContain("Let's go");
 		expect(out.text).toContain("Writing config: done");
 		expect(out.text).toContain("Provider: openai");
+	});
+
+	test("secrets stay masked even in the non-interactive echo", async () => {
+		const out = sink();
+		await onboard({
+			name: "MyTool",
+			interactive: "never",
+			output: out,
+			state: false,
+			env: { MYTOOL_API_KEY: "sk-super-secret" },
+			nodes: [
+				{ node: "secret", id: "apiKey", label: "API key" },
+				{ node: "summary" },
+			],
+		});
+
+		expect(out.text).not.toContain("sk-super-secret");
+		expect(out.text).toContain("hidden");
 	});
 });

@@ -23,8 +23,12 @@
       "import": "./dist/index.js"
     }
   },
+  "bin": {
+    "onboard-kit": "bin/onboard-kit.mjs"
+  },
   "files": [
     "dist",
+    "bin",
     "README.md",
     "LICENSE"
   ],
@@ -32,7 +36,7 @@
     "build": "bun run build:clean && bun run build:emit",
     "check": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
-    "demo": "bun run examples/demo.ts",
+    "demo": "bun run bin/onboard-kit.mjs demo",
     "prepack": "bun run build",
     "build:clean": "rm -rf dist",
     "build:emit": "tsc -p tsconfig.build.json"

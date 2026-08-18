@@ -1,51 +1,42 @@
 /**
  * onboard-kit — drop-in onboarding flows for CLI tools.
  *
- * Pick your nodes, choose the order. The look is not yours to configure, and
- * that is the point: every flow built with this package is consistent and
- * good without anyone making a visual decision.
+ * Nodes are plain object literals. You choose which ones run and in what
+ * order; the look is not yours to configure, and that is the point.
  *
  * @example
  * ```ts
- * import { onboard, welcome, choice, secret, summary, task, done } from "onboard-kit";
+ * import { onboard } from "onboard-kit";
  *
  * await onboard({
  *   name: "MyTool",
  *   nodes: [
- *     welcome({ subtitle: "Let's get you set up." }),
- *     choice({ id: "provider", label: "Provider", options: [{ value: "openai" }] }),
- *     secret({ id: "apiKey", label: "API key" }),
- *     summary(),
- *     task({ label: "Writing config", run: (a) => writeConfig(a) }),
- *     done({ next: [{ cmd: "mytool start", desc: "launch the daemon" }] }),
+ *     { node: "welcome", subtitle: "Let's get you set up." },
+ *     { node: "choice", id: "provider", label: "Provider",
+ *       options: [{ value: "openai" }, { value: "local" }] },
+ *     { node: "secret", id: "apiKey", label: "API key",
+ *       when: (a) => a.provider !== "local" },
+ *     { node: "summary" },
+ *     { node: "task", label: "Writing config", run: (a) => writeConfig(a) },
+ *     { node: "done", next: [{ cmd: "mytool start" }] },
  *   ],
  * });
  * ```
  */
 
 export {
-	check,
-	choice,
-	confirm,
-	done,
-	multiChoice,
-	note,
-	pick,
-	secret,
-	summary,
-	task,
-	text,
-	welcome,
-} from "./nodes.js";
-
-export {
 	AUTOCOMPLETE_THRESHOLD,
 	envNameFor,
 	type InteractiveMode,
+	isFailure,
 	type MissingInput,
 	onboard,
 	type OnboardConfig,
+	OnboardError,
+	type OnboardFailure,
 	type OnboardResult,
+	type OnboardSuccess,
+	type Output,
 } from "./run.js";
 
 export {
@@ -77,6 +68,6 @@ export type {
 	SummaryNode,
 	TaskNode,
 	TextNode,
+	Validator,
 	WelcomeNode,
-	When,
 } from "./types.js";
