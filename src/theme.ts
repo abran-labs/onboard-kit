@@ -38,15 +38,33 @@ function colorEnabled(): boolean {
 	return Boolean(process.stdout.isTTY);
 }
 
-function wrap(code: string, text: string): string {
-	return colorEnabled() ? `${ESC}${code}m${text}${ESC}0m` : text;
+/**
+ * Wraps text in an SGR pair.
+ *
+ * The closer is the specific reset for that attribute (`39` for colour, `22`
+ * for weight), never `0`. A blanket reset would end any style it was nested
+ * inside, so `dim()` within a coloured span would silently drop the colour —
+ * and it is what clack emits, so our output stays byte-comparable with its.
+ */
+function wrap(open: string, close: string, text: string): string {
+	return colorEnabled() ? `${ESC}${open}m${text}${ESC}${close}m` : text;
 }
 
-export const dim = (text: string): string => wrap("2", text);
-export const bold = (text: string): string => wrap("1", text);
-export const red = (text: string): string => wrap("31", text);
-export const green = (text: string): string => wrap("32", text);
-export const yellow = (text: string): string => wrap("33", text);
+const color = (code: string) => (text: string) => wrap(code, "39", text);
+
+export const dim = (text: string): string => wrap("2", "22", text);
+/**
+ * The rail colour.
+ *
+ * Bright black (SGR 90), not dim (SGR 2). Clack renders its own rail with 90,
+ * and the two render visibly differently — mixing them made the vertical line
+ * appear to change brightness as it ran down the screen.
+ */
+export const gray = color("90");
+export const bold = (text: string): string => wrap("1", "22", text);
+export const red = color("31");
+export const green = color("32");
+export const yellow = color("33");
 
 /**
  * Rail glyphs come from clack so our chrome and its prompts line up exactly.
@@ -91,29 +109,34 @@ export interface Theme {
 }
 
 export function createTheme(accent: Accent): Theme {
-	const paint = (text: string) => wrap(ACCENT_CODES[accent], text);
+	const paint = color(ACCENT_CODES[accent]);
 
 	function rule(prefix: string, title: string): string {
 		// Rule length is computed from the *visible* title, never the styled string.
 		const used = 3 + title.length + 1;
 		const fill = Math.max(HEADER_WIDTH - used, 0);
-		return `${prefix}  ${bold(title)} ${dim(SYM.barH.repeat(fill))}`;
+		return `${prefix}  ${bold(paint(title))} ${gray(SYM.barH.repeat(fill))}`;
 	}
 
 	return {
 		accent: paint,
-		header: (name) => rule(paint(SYM.barStart), name),
-		divider: (title) => rule(dim(SYM.connect), title),
-		footer: (message) => `${paint(SYM.barEnd)}  ${message}`,
-		rail: (text) => (text === undefined ? dim(SYM.bar) : `${dim(SYM.bar)}  ${text}`),
-		step: (label) => `${paint(SYM.step)}  ${label}`,
+		// The rail is frame, not content: every corner and join is the same
+		// grey as the bar itself. Accent never touches it — it lives on the
+		// title, the logo, and the Next commands, where it means something.
+		header: (name) => rule(gray(SYM.barStart), name),
+		divider: (title) => rule(gray(SYM.connect), title),
+		footer: (message) => `${gray(SYM.barEnd)}  ${message}`,
+		rail: (text) => (text === undefined ? gray(SYM.bar) : `${gray(SYM.bar)}  ${text}`),
+		// Green matches clack's own submitted-step symbol, so our steps and its
+		// prompts are indistinguishable in the same column.
+		step: (label) => `${green(SYM.step)}  ${label}`,
 		status: (kind, text) => {
 			const mark = kind === "pass" ? green(SYM.pass) : kind === "warn" ? yellow(SYM.warn) : red(SYM.fail);
-			return `${dim(SYM.bar)}  ${mark}  ${kind === "warn" ? dim(text) : text}`;
+			return `${gray(SYM.bar)}  ${mark}  ${kind === "warn" ? dim(text) : text}`;
 		},
 		rows: (entries) => {
 			const width = entries.reduce((max, [key]) => Math.max(max, key.length), 0);
-			return entries.map(([key, value]) => `${dim(SYM.bar)}  ${key.padEnd(width)}   ${value}`).join("\n");
+			return entries.map(([key, value]) => `${gray(SYM.bar)}  ${key.padEnd(width)}   ${value}`).join("\n");
 		},
 		next: (entries) => {
 			const width = entries.reduce((max, [cmd]) => Math.max(max, cmd.length), 0);

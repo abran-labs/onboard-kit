@@ -386,7 +386,7 @@ async function runSummary(
 	for (const n of nodes) {
 		if (!isQuestion(n)) continue;
 		if (!(n.id in answers)) continue;
-		rows.push([n.label, n.node === "secret" ? dim("•••••  (hidden)") : formatValue(answers[n.id])]);
+		rows.push([n.label, n.node === "secret" ? dim("•••••  (hidden)") : displayValue(n, answers[n.id])]);
 	}
 	if (rows.length === 0) return true;
 
@@ -511,6 +511,25 @@ function coerce(node: QuestionNode, raw: string): unknown {
 		default:
 			return raw;
 	}
+}
+
+/**
+ * Renders an answer the way the user chose it.
+ *
+ * `choice` and `multiChoice` store the option `value`, but the user picked a
+ * `label` — showing the raw value made the review contradict the prompt
+ * ("OpenAI" selected, "openai" reviewed).
+ */
+function displayValue(node: QuestionNode, value: unknown): string {
+	if (node.node === "choice" || node.node === "multiChoice") {
+		const labelFor = (v: unknown) => node.options.find((o) => o.value === v)?.label ?? String(v);
+		return Array.isArray(value)
+			? value.length
+				? value.map(labelFor).join(", ")
+				: dim("none")
+			: labelFor(value);
+	}
+	return formatValue(value);
 }
 
 function formatValue(value: unknown): string {

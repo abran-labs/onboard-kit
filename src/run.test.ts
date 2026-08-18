@@ -407,3 +407,57 @@ describe("non-interactive output", () => {
 		expect(out.text).toContain("hidden");
 	});
 });
+
+describe("review rendering", () => {
+	test("shows the option label the user picked, not the stored value", async () => {
+		const out = sink();
+		await onboard({
+			name: "MyTool",
+			interactive: "never",
+			output: out,
+			state: false,
+			env: { MYTOOL_PROVIDER: "openai", MYTOOL_FEATURES: "sync,cloud" },
+			nodes: [
+				{
+					node: "choice",
+					id: "provider",
+					label: "Which provider?",
+					options: [
+						{ value: "openai", label: "OpenAI" },
+						{ value: "anthropic", label: "Anthropic" },
+					],
+				},
+				{
+					node: "multiChoice",
+					id: "features",
+					label: "Features",
+					options: [
+						{ value: "sync", label: "Sync" },
+						{ value: "cloud", label: "Cloud" },
+					],
+				},
+				{ node: "summary" },
+			],
+		});
+
+		expect(out.text).toContain("Which provider?: OpenAI");
+		expect(out.text).toContain("Features: Sync, Cloud");
+	});
+
+	test("falls back to the raw value when an option has no label", async () => {
+		const out = sink();
+		await onboard({
+			name: "MyTool",
+			interactive: "never",
+			output: out,
+			state: false,
+			env: { MYTOOL_PROVIDER: "openai" },
+			nodes: [
+				{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+				{ node: "summary" },
+			],
+		});
+
+		expect(out.text).toContain("Provider: openai");
+	});
+});
