@@ -1,10 +1,22 @@
 {
-  "name": "@abran-labs/onboard-kit",
-  "version": "0.1.0",
-  "description": "Small reusable onboarding flow and plan helpers for CLI tools.",
+  "name": "onboard-kit",
+  "version": "0.2.0",
+  "description": "Drop-in onboarding flows for CLI tools. Pick your nodes, choose the order \u2014 the look is handled.",
   "type": "module",
   "license": "MIT",
-  "private": false,
+  "author": "Abran Labs <abran.labs@gmail.com>",
+  "homepage": "https://github.com/abran-labs/onboard-kit#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/abran-labs/onboard-kit.git"
+  },
+  "bugs": {
+    "url": "https://github.com/abran-labs/onboard-kit/issues"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "sideEffects": false,
   "exports": {
     ".": {
       "types": "./dist/index.d.ts",
@@ -14,28 +26,34 @@
   "files": [
     "dist",
     "README.md",
-    "package.json"
+    "LICENSE"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "bun run build:clean && bun run build:emit",
     "check": "tsc -p tsconfig.json --noEmit",
-    "test": "vitest run",
-    "prepare": "npm run build",
-    "prepack": "npm run build"
+    "test": "bun test",
+    "demo": "bun run examples/demo.ts",
+    "prepack": "bun run build",
+    "build:clean": "rm -rf dist",
+    "build:emit": "tsc -p tsconfig.build.json"
   },
-  "dependencies": {
-    "@clack/prompts": "^1.1.1"
+  "peerDependencies": {
+    "@clack/prompts": "^1.5.0"
   },
   "devDependencies": {
-    "@types/node": "^25.0.1",
-    "typescript": "^5.9.3",
-    "vitest": "^4.0.15"
+    "@clack/prompts": "^1.5.1",
+    "@types/bun": "latest",
+    "typescript": "^5.9.3"
   },
   "keywords": [
-    "cli",
-    "clack",
-    "flow",
     "onboarding",
+    "cli",
+    "tui",
+    "prompts",
+    "clack",
+    "setup",
+    "wizard",
+    "first-run",
     "typescript"
   ]
 }

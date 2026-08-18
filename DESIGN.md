@@ -1,8 +1,8 @@
 # onboard-kit — design
 
-**Status:** proposal, rev 2 — awaiting review
+**Status:** rev 2 — **implemented** in 0.2.0 (phases 1 and 2 of §8)
 **Date:** 2026-08-18
-**Needs sign-off on:** §4 (the node catalog — this *is* the product), §6 (escape hatch), §8 (scope)
+**Still open:** §4 (is 12 the right catalog?), §10 Q3 (keep `accent`?)
 
 > **Changed in rev 2.** Rev 1 proposed a configurable flow *engine* with lifecycle hooks
 > (`preflight` / `plan` / `apply` / `rollback`), a swappable renderer, and a theming seam.
