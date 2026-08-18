@@ -14,7 +14,6 @@ if (command !== "demo") {
 
 const result = await onboard({
 	name: "MyTool",
-	accent: "cyan",
 	state: false, // the demo always runs
 	interactive: "always",
 

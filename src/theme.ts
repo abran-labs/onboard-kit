@@ -17,7 +17,11 @@ import {
  * developer making a single visual decision.
  */
 
-/** The six permitted accents. Deliberately not free-form colour. */
+/**
+ * The six permitted accents. Deliberately named slots, not free-form colour:
+ * each maps to an ANSI code the reader's terminal resolves from their own
+ * palette, so it can never clash with their background.
+ */
 export type Accent = "cyan" | "green" | "magenta" | "blue" | "yellow" | "violet";
 
 const ACCENT_CODES: Record<Accent, string> = {
@@ -108,8 +112,24 @@ export interface Theme {
 	next(entries: readonly (readonly [string, string])[]): string;
 }
 
-export function createTheme(accent: Accent): Theme {
-	const paint = color(ACCENT_CODES[accent]);
+/**
+ * Builds the template's renderer.
+ *
+ * Colour policy, and the whole reason this looks calm: **hue is reserved for
+ * things that need attention.** A warning is yellow and a failure is red; a
+ * passing check and a completed step are the terminal's ordinary foreground,
+ * because "it worked" is the expected case and should not compete for the eye.
+ * Hierarchy is carried by weight — bold for titles, grey for the rail, dim for
+ * secondary text.
+ *
+ * Every colour is an ANSI slot, never fixed RGB, so the output is drawn from
+ * the reader's own terminal palette and cannot clash with their background.
+ *
+ * `accent` is opt-in. Left undefined the chrome is entirely monochrome; set
+ * it and exactly two places take colour — the title and the `Next` commands.
+ */
+export function createTheme(accent?: Accent): Theme {
+	const paint = accent ? color(ACCENT_CODES[accent]) : (text: string) => text;
 
 	function rule(prefix: string, title: string): string {
 		// Rule length is computed from the *visible* title, never the styled string.
@@ -120,18 +140,17 @@ export function createTheme(accent: Accent): Theme {
 
 	return {
 		accent: paint,
-		// The rail is frame, not content: every corner and join is the same
-		// grey as the bar itself. Accent never touches it — it lives on the
-		// title, the logo, and the Next commands, where it means something.
+		// The rail is frame, not content: every corner and join is the same grey
+		// as the bar itself, and accent never touches it.
 		header: (name) => rule(gray(SYM.barStart), name),
 		divider: (title) => rule(gray(SYM.connect), title),
 		footer: (message) => `${gray(SYM.barEnd)}  ${message}`,
 		rail: (text) => (text === undefined ? gray(SYM.bar) : `${gray(SYM.bar)}  ${text}`),
-		// Green matches clack's own submitted-step symbol, so our steps and its
-		// prompts are indistinguishable in the same column.
-		step: (label) => `${green(SYM.step)}  ${label}`,
+		// Plain foreground: a completed step is not news.
+		step: (label) => `${SYM.step}  ${label}`,
 		status: (kind, text) => {
-			const mark = kind === "pass" ? green(SYM.pass) : kind === "warn" ? yellow(SYM.warn) : red(SYM.fail);
+			// Only warn and fail get hue. A tick stays plain.
+			const mark = kind === "pass" ? SYM.pass : kind === "warn" ? yellow(SYM.warn) : red(SYM.fail);
 			return `${gray(SYM.bar)}  ${mark}  ${kind === "warn" ? dim(text) : text}`;
 		},
 		rows: (entries) => {
@@ -140,7 +159,8 @@ export function createTheme(accent: Accent): Theme {
 		},
 		next: (entries) => {
 			const width = entries.reduce((max, [cmd]) => Math.max(max, cmd.length), 0);
-			const lines = entries.map(([cmd, desc]) => `      ${paint(cmd.padEnd(width))}   ${dim(desc)}`);
+			// Bold carries these when no accent is set, so they still stand out.
+			const lines = entries.map(([cmd, desc]) => `      ${bold(paint(cmd.padEnd(width)))}   ${dim(desc)}`);
 			return [`    ${bold("Next")}`, ...lines].join("\n");
 		},
 	};

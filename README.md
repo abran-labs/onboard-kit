@@ -59,7 +59,11 @@ There is no theme object, no colour config, no custom renderers, and no way to a
 
 What you control is which nodes run and in what order. That's the whole API.
 
-The one exception is identity — `name`, `logo`, and `accent` (six presets, not free-form hex), because otherwise every tool's onboarding would look identical.
+The one exception is identity — `name`, `logo`, and an optional `accent`.
+
+Colour policy: **hue is spent only on things that need attention.** A warning is yellow, a failure is red; a passing check and a completed step use your terminal's ordinary foreground, because "it worked" is the expected case and shouldn't compete for the eye. Hierarchy comes from weight instead — bold, grey, dim.
+
+Every colour is an ANSI slot, never fixed RGB, so output is drawn from *the reader's own terminal palette* and can't clash with their background. By default the chrome is fully monochrome; set `accent` (one of six named slots) and exactly two things take colour — the title and the `Next` commands.
 
 ## Install
 

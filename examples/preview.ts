@@ -4,7 +4,7 @@
  */
 import { createTheme } from "../src/theme.js";
 
-const t = createTheme("cyan");
+const t = createTheme();
 
 console.log(t.header("MyTool"));
 console.log(t.rail());

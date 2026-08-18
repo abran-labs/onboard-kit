@@ -36,7 +36,10 @@ export interface Output {
 export interface OnboardConfig<A, Nodes extends readonly Node<A>[]> {
 	/** Product name. Appears in the banner and seeds env var names. */
 	readonly name: string;
-	/** One of six presets. Defaults to `cyan`. */
+	/**
+	 * Opt-in brand colour for the title and `Next` commands. Omit for entirely
+	 * monochrome chrome, which is the default and adapts to any terminal theme.
+	 */
 	readonly accent?: Accent;
 	/** Optional ASCII banner, rendered in the template's frame. */
 	readonly logo?: string;
@@ -157,7 +160,7 @@ export async function onboard<
 	// that can be returned are the success ones — and the type says so.
 	type Ret = Throw extends true ? OnboardSuccess<R> : OnboardResult<R>;
 
-	const { name, accent = "cyan", logo, version = 1, nodes, interactive = "auto", env = process.env, output } = config;
+	const { name, accent, logo, version = 1, nodes, interactive = "auto", env = process.env, output } = config;
 
 	const flowId = config.id ?? slug(name);
 	const theme = createTheme(accent);
