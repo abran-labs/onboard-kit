@@ -1,5 +1,6 @@
 import * as clack from "@clack/prompts";
 import {
+	currentTty,
 	defaultResumePath,
 	defaultStatePath,
 	fileResume,
@@ -226,7 +227,7 @@ export async function onboard<
 				flowId,
 				version,
 				savedAt: new Date().toISOString(),
-				ownerPid: process.ppid,
+				...(currentTty() !== undefined ? { ownerTty: currentTty() as string } : {}),
 				answers: keep,
 			});
 		} catch {
@@ -237,13 +238,14 @@ export async function onboard<
 
 		if (!isInteractive) return;
 		const command = config.resumeCommand ?? `${slug(name)} --resume`;
-		const dropped = secretIds.size > 0 && list.some((n) => n.node === "secret" && n.id in answers);
-		out.write(`${theme.rail()}\n`);
-		out.write(`${theme.rail(dim("Progress saved. To pick up where you left off:"))}\n`);
-		out.write(`${theme.rail()}\n`);
-		out.write(`${theme.rail(bold(command))}\n`);
-		if (dropped) out.write(`${theme.rail(dim("You will be asked for your credentials again."))}\n`);
-		out.write(`${theme.rail()}\n`);
+		// The rail is already closed by the cancel line above, so this renders
+		// as a trailing block, exactly like `done`'s Next.
+		const hadSecret = list.some((n) => n.node === "secret" && visible(n));
+		out.write("\n");
+		out.write(
+			`${theme.next([[command, hadSecret ? "resumes here; credentials asked again" : "resumes where you left off"]], "Resume")}\n`,
+		);
+		out.write("\n");
 	}
 
 	// ---- already onboarded? -------------------------------------------------

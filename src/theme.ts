@@ -108,8 +108,8 @@ export interface Theme {
 	status(kind: "pass" | "warn" | "fail", text: string): string;
 	/** Aligned `key   value` rows for the review table. */
 	rows(entries: readonly (readonly [string, string])[]): string;
-	/** The trailing `Next` block. */
-	next(entries: readonly (readonly [string, string])[]): string;
+	/** A trailing block that sits *below* the closed rail, e.g. `Next`. */
+	next(entries: readonly (readonly [string, string])[], title?: string): string;
 }
 
 /**
@@ -158,11 +158,11 @@ export function createTheme(accent?: Accent): Theme {
 			const width = entries.reduce((max, [key]) => Math.max(max, key.length), 0);
 			return entries.map(([key, value]) => `${gray(SYM.bar)}  ${key.padEnd(width)}   ${value}`).join("\n");
 		},
-		next: (entries) => {
+		next: (entries, title = "Next") => {
 			const width = entries.reduce((max, [cmd]) => Math.max(max, cmd.length), 0);
 			// Bold carries these when no accent is set, so they still stand out.
 			const lines = entries.map(([cmd, desc]) => `      ${bold(paint(cmd.padEnd(width)))}   ${dim(desc)}`);
-			return [`    ${bold("Next")}`, ...lines].join("\n");
+			return [`    ${bold(title)}`, ...lines].join("\n");
 		},
 	};
 }

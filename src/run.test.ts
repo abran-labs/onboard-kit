@@ -521,7 +521,6 @@ describe("resume", () => {
 			flowId: "mytool",
 			version: 1,
 			savedAt: new Date().toISOString(),
-			ownerPid: process.pid,
 			answers: { provider: "openai" },
 		});
 
@@ -550,7 +549,6 @@ describe("resume", () => {
 			flowId: "mytool",
 			version: 1,
 			savedAt: new Date().toISOString(),
-			ownerPid: process.pid,
 			answers: { provider: "openai" },
 		});
 
@@ -572,7 +570,6 @@ describe("resume", () => {
 			flowId: "mytool",
 			version: 1,
 			savedAt: new Date().toISOString(),
-			ownerPid: process.pid,
 			answers: { provider: "openai" },
 		});
 

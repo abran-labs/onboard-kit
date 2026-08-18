@@ -5,17 +5,29 @@
  */
 import { onboard } from "../dist/index.js";
 
-const command = process.argv[2] ?? "demo";
+const args = process.argv.slice(2);
+const resume = args.includes("--resume");
+const command = args.find((a) => !a.startsWith("-")) ?? "demo";
 
 if (command !== "demo") {
-	console.error(`onboard-kit: unknown command "${command}"\n\nUsage:\n  npx onboard-kit demo\n`);
+	console.error(
+		`onboard-kit: unknown command "${command}"\n\nUsage:\n  npx onboard-kit demo [--resume]\n`,
+	);
 	process.exit(1);
 }
 
 const result = await onboard({
 	name: "MyTool",
+	id: "onboard-kit-demo",
 	state: false, // the demo always runs
 	interactive: "always",
+
+	// Cancel partway through and it saves your progress, then tells you how to
+	// pick it up. Your answers live in the runtime dir (RAM-backed, cleared on
+	// logout) and the API key is never among them.
+	resumable: true,
+	resume,
+	resumeCommand: "bun run demo --resume",
 
 	nodes: [
 		{ node: "welcome", subtitle: "This is the onboard-kit demo. Nothing is written to disk." },

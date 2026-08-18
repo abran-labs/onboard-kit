@@ -1,3 +1,4 @@
+import { readlinkSync } from "node:fs";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -115,8 +116,19 @@ export interface ResumeState {
 	readonly flowId: string;
 	readonly version: number;
 	readonly savedAt: string;
-	/** The shell that owned the cancelled run, so other terminals ignore it. */
-	readonly ownerPid: number;
+	/**
+	 * The controlling terminal that owned the cancelled run, so a different
+	 * terminal ignores it.
+	 *
+	 * Deliberately the tty and not the parent pid: `bun run` / `npm run` / `npx`
+	 * each insert a wrapper process that exits immediately, so a pid would be
+	 * dead by the next invocation and every resume would look stale. The tty is
+	 * inherited straight through those wrappers.
+	 *
+	 * Undefined when there is no tty (a pipe, or a platform without `/proc`),
+	 * in which case freshness rests on the TTL alone.
+	 */
+	readonly ownerTty?: string;
 	/** Non-secret answers only. */
 	readonly answers: Record<string, unknown>;
 }
@@ -176,16 +188,28 @@ export function memoryResume(initial?: ResumeState): ResumeStore {
 	};
 }
 
-/** Stale once its shell is gone or the TTL has passed. */
+/**
+ * Identifies the controlling terminal, e.g. `/dev/pts/3`.
+ *
+ * Linux only; undefined elsewhere or when stdin is not a tty. Callers must
+ * treat undefined as "unknown", never as a mismatch.
+ */
+export function currentTty(): string | undefined {
+	try {
+		const tty = readlinkSync("/proc/self/fd/0");
+		return tty.startsWith("/dev/pts/") || tty.startsWith("/dev/tty") ? tty : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+/** Stale once the TTL has passed, or once a different terminal is asking. */
 function isFresh(state: ResumeState, now = Date.now()): boolean {
 	if (now - Date.parse(state.savedAt) > RESUME_TTL_MS) return false;
-	try {
-		// Signal 0 tests for existence without delivering anything.
-		process.kill(state.ownerPid, 0);
-		return true;
-	} catch {
-		return false;
-	}
+	const here = currentTty();
+	// Only a positive mismatch disqualifies it. Two unknowns are not a mismatch.
+	if (state.ownerTty !== undefined && here !== undefined && state.ownerTty !== here) return false;
+	return true;
 }
 
 function isResume(value: unknown): value is ResumeState {
@@ -196,7 +220,6 @@ function isResume(value: unknown): value is ResumeState {
 		typeof v.flowId === "string" &&
 		typeof v.version === "number" &&
 		typeof v.savedAt === "string" &&
-		typeof v.ownerPid === "number" &&
 		typeof v.answers === "object" &&
 		v.answers !== null
 	);
