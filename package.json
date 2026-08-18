@@ -1,0 +1,41 @@
+{
+  "name": "@abran-labs/onboard-kit",
+  "version": "0.1.0",
+  "description": "Small reusable onboarding flow and plan helpers for CLI tools.",
+  "type": "module",
+  "license": "MIT",
+  "private": false,
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "package.json"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "prepare": "npm run build",
+    "prepack": "npm run build"
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.1",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  },
+  "keywords": [
+    "cli",
+    "clack",
+    "flow",
+    "onboarding",
+    "typescript"
+  ]
+}
