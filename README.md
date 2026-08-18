@@ -85,8 +85,8 @@ Twelve nodes, all plain objects discriminated on `node`. That's all of them.
 
 | | |
 |---|---|
-| `{ node: "choice", id, label, options, default?, hint? }` | Pick one (auto-upgrades to autocomplete past 10 options) |
-| `{ node: "multiChoice", id, label, options, default?, min?, max? }` | Pick any number |
+| `{ node: "choice", id, label, options, default? }` | Pick one (auto-upgrades to autocomplete past 10 options) |
+| `{ node: "multiChoice", id, label, options, default?, required? }` | Pick any number |
 | `{ node: "confirm", id, label, default? }` | Yes / no |
 | `{ node: "text", id, label, placeholder?, default?, validate? }` | Free text |
 | `{ node: "secret", id, label, validate? }` | Masked; never persisted, always masked in review |

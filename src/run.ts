@@ -457,7 +457,7 @@ async function promptFor(node: QuestionNode, message: string): Promise<unknown> 
 				message,
 				options: toClackOptions(node.options),
 				...(node.default !== undefined ? { initialValues: [...node.default] } : {}),
-				required: (node.min ?? 0) > 0,
+				required: node.required ?? false,
 			});
 		case "confirm":
 			return clack.confirm({ message, ...(node.default !== undefined ? { initialValue: node.default } : {}) });

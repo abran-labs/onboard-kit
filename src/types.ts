@@ -68,7 +68,6 @@ export interface ChoiceNode<A> {
 	readonly label: string;
 	readonly options: readonly NodeOption[];
 	readonly default?: string;
-	readonly hint?: string;
 	readonly when?: (answers: A) => boolean;
 }
 
@@ -78,8 +77,8 @@ export interface MultiChoiceNode<A> {
 	readonly label: string;
 	readonly options: readonly NodeOption[];
 	readonly default?: readonly string[];
-	readonly min?: number;
-	readonly max?: number;
+	/** Require at least one selection. Clack has no min/max count, so neither do we. */
+	readonly required?: boolean;
 	readonly when?: (answers: A) => boolean;
 }
 
