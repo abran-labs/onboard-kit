@@ -11,6 +11,7 @@ import {
 	type StateStore,
 } from "./state.js";
 import { type Accent, bold, createTheme, dim, red, type Theme } from "./theme.js";
+import { wordmark } from "./wordmark.js";
 import type { AnswerBag, AnswersOf, CheckNode, Node, QuestionNode, SummaryNode, TaskNode } from "./types.js";
 import { isQuestion } from "./types.js";
 
@@ -51,8 +52,14 @@ export interface OnboardConfig<A, Nodes extends readonly Node<A>[]> {
 	 * monochrome chrome, which is the default and adapts to any terminal theme.
 	 */
 	readonly accent?: Accent;
-	/** Optional ASCII banner, rendered in the template's frame. */
-	readonly logo?: string;
+	/**
+	 * A wordmark above the rail. `true` renders `name` in the template's block
+	 * font; a string is used verbatim, so you can supply your own ASCII art.
+	 *
+	 * When set, it replaces the header rule rather than sitting above it — the
+	 * wordmark is the title, and printing both just says the name twice.
+	 */
+	readonly logo?: string | true;
 	/** Stable id for the onboarding record. Defaults to a slug of `name`. */
 	readonly id?: string;
 	/** Bump to re-ask only the questions added since. Defaults to `1`. */
@@ -238,13 +245,13 @@ export async function onboard<
 
 		if (!isInteractive) return;
 		const command = config.resumeCommand ?? `${slug(name)} --resume`;
-		// The rail is already closed by the cancel line above, so this renders
-		// as a trailing block, exactly like `done`'s Next.
 		const hadSecret = list.some((n) => n.node === "secret" && visible(n));
+		// The rail is already closed by the cancel line above, so this sits
+		// below it as a compact two-column block.
+		const rows: (readonly [string, string])[] = [["Resume", command]];
+		if (hadSecret) rows.push(["Note", dim("your credentials will be asked again")]);
 		out.write("\n");
-		out.write(
-			`${theme.next([[command, hadSecret ? "resumes here; credentials asked again" : "resumes where you left off"]], "Resume")}\n`,
-		);
+		out.write(`${theme.trailing(rows)}\n`);
 		out.write("\n");
 	}
 
@@ -298,10 +305,13 @@ export async function onboard<
 			switch (node.node) {
 				case "welcome": {
 					if (!isInteractive) break;
-					out.write(`${theme.header(node.title ?? name)}\n`);
-					if (logo) {
-						out.write(`${theme.rail()}\n`);
-						for (const line of logo.split("\n")) out.write(`${theme.rail(theme.accent(line))}\n`);
+					const art = logo === true ? wordmark(node.title ?? name) : logo ? logo.split("\n") : [];
+					if (art.length > 0) {
+						out.write(`${theme.logo(art)}\n`);
+						out.write("\n");
+						out.write(`${theme.open()}\n`);
+					} else {
+						out.write(`${theme.header(node.title ?? name)}\n`);
 					}
 					if (node.subtitle) out.write(`${theme.rail()}\n${theme.rail(node.subtitle)}\n`);
 					out.write(`${theme.rail()}\n`);
@@ -355,7 +365,16 @@ export async function onboard<
 
 				default: {
 					if (previouslyAnswered.has(node.id)) break;
-					if (restored.includes(node.id)) break;
+					if (restored.includes(node.id)) {
+						// Redraw it as an answered prompt. Skipping silently made a
+						// resumed run look like it had lost the earlier answers.
+						if (isInteractive) {
+							out.write(`${theme.step(node.label)}\n`);
+							out.write(`${theme.rail(dim(displayValue(node, answers[node.id])))}\n`);
+							out.write(`${theme.rail()}\n`);
+						}
+						break;
+					}
 
 					const value = await resolveQuestion(node, {
 						out,

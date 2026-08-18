@@ -56,6 +56,8 @@ export {
 
 export type { Accent } from "./theme.js";
 
+export { wordmark, WORDMARK_ROWS } from "./wordmark.js";
+
 export type {
 	AnswerBag,
 	AnswersOf,

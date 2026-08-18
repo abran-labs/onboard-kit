@@ -96,6 +96,10 @@ export interface Theme {
 	readonly accent: (text: string) => string;
 	/** `┌  Name ────────` — opens the rail. */
 	header(name: string): string;
+	/** A bare `┌` — opens the rail when a wordmark already carries the name. */
+	open(): string;
+	/** A wordmark, indented to sit above the rail. */
+	logo(lines: readonly string[]): string;
 	/** `├  Title ────────` — a divider that keeps the rail connected. */
 	divider(title: string): string;
 	/** `└  message` — closes the rail. */
@@ -110,6 +114,11 @@ export interface Theme {
 	rows(entries: readonly (readonly [string, string])[]): string;
 	/** A trailing block that sits *below* the closed rail, e.g. `Next`. */
 	next(entries: readonly (readonly [string, string])[], title?: string): string;
+	/**
+	 * A compact label/value block below the closed rail, for the one or two
+	 * facts a reader needs after the flow ends — how to resume, say.
+	 */
+	trailing(entries: readonly (readonly [string, string])[]): string;
 }
 
 /**
@@ -144,6 +153,8 @@ export function createTheme(accent?: Accent): Theme {
 		// The rail is frame, not content: every corner and join is the same grey
 		// as the bar itself, and accent never touches it.
 		header: (name) => rule(gray(SYM.barStart), name),
+		open: () => gray(SYM.barStart),
+		logo: (lines) => lines.map((line) => `   ${paint(line)}`).join("\n"),
 		divider: (title) => rule(gray(SYM.connect), title),
 		footer: (message) => `${gray(SYM.barEnd)}  ${message}`,
 		rail: (text) => (text === undefined ? gray(SYM.bar) : `${gray(SYM.bar)}  ${text}`),
@@ -157,6 +168,14 @@ export function createTheme(accent?: Accent): Theme {
 		rows: (entries) => {
 			const width = entries.reduce((max, [key]) => Math.max(max, key.length), 0);
 			return entries.map(([key, value]) => `${gray(SYM.bar)}  ${key.padEnd(width)}   ${value}`).join("\n");
+		},
+		trailing: (entries) => {
+			const width = entries.reduce((max, [label]) => Math.max(max, label.length), 0);
+			// Two columns, indented to sit just clear of the rail — not the deeper
+			// indent `next` uses, which reads as adrift for a single line.
+			return entries
+				.map(([label, value]) => `   ${bold(label.padEnd(width))}   ${value}`)
+				.join("\n");
 		},
 		next: (entries, title = "Next") => {
 			const width = entries.reduce((max, [cmd]) => Math.max(max, cmd.length), 0);

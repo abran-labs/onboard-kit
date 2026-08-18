@@ -133,3 +133,27 @@ describe("layout", () => {
 		expect(columnOf(rows[0] as string, "OpenAI")).toBe(columnOf(rows[1] as string, "yes"));
 	});
 });
+
+describe("trailing blocks", () => {
+	test("the resume block aligns its values and sits shallow", () => {
+		process.env.NO_COLOR = "1";
+		const lines = createTheme()
+			.trailing([
+				["Resume", "mytool setup --resume"],
+				["Note", "credentials asked again"],
+			])
+			.split("\n");
+		process.env.NO_COLOR = "";
+
+		// Shallow indent: it follows a closed rail, not nested inside one.
+		expect(lines[0]?.startsWith("   R")).toBe(true);
+		expect(lines[0]?.indexOf("mytool")).toBe(lines[1]?.indexOf("credentials"));
+	});
+
+	test("a wordmark is indented to clear the rail", () => {
+		process.env.NO_COLOR = "1";
+		const rendered = createTheme().logo(["███", "█  "]).split("\n");
+		process.env.NO_COLOR = "";
+		expect(rendered.every((l) => l.startsWith("   "))).toBe(true);
+	});
+});

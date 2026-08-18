@@ -199,18 +199,43 @@ try {
 
 There's also `isFailure(result)` if you'd rather narrow than throw.
 
+## Wordmark
+
+Set `logo: true` and your product name renders in the template's block font, replacing the header rule — the wordmark *is* the title, so printing both would just say the name twice.
+
+```
+   █   █ █   █ █████  ██   ██  █
+   ██ ██  █ █    █   █  █ █  █ █
+   █ █ █   █     █   █  █ █  █ █
+   █   █   █     █   █  █ █  █ █
+   █   █   █     █    ██   ██  ████
+
+┌
+│  Let's get you set up.
+│
+```
+
+Pass a string instead to supply your own ASCII art. Unsupported characters degrade to blanks rather than throwing — a logo is decoration and must never fail a setup flow.
+
 ## Resume after a cancel
 
 Set `resumable: true` and a run that gets cancelled or crashes saves its progress, printing how to pick it up:
 
 ```
-│  Progress saved. To pick up where you left off:
-│
-│  mytool setup --resume
-│  You will be asked for your credentials again.
+└  Cancelled.
+
+   Resume   mytool setup --resume
+   Note     your credentials will be asked again
 ```
 
-Then run it again with `resume: true` and the answered questions are skipped.
+Run it again with `resume: true` and the questions you already answered are **replayed as answered** rather than silently skipped, so a resumed flow reads exactly like an uninterrupted one:
+
+```
+◇  Which provider?
+│  OpenAI            ← restored, not re-asked
+│
+◆  [1/2]  API key
+```
 
 ```ts
 await onboard({

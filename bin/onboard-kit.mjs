@@ -19,6 +19,7 @@ if (command !== "demo") {
 const result = await onboard({
 	name: "MyTool",
 	id: "onboard-kit-demo",
+	logo: true,
 	state: false, // the demo always runs
 	interactive: "always",
 
@@ -78,4 +79,6 @@ const result = await onboard({
 	],
 });
 
-if (result.status !== "completed") process.exitCode = 1;
+// Cancelling is a choice, not a failure — exiting non-zero made the shell
+// print an error over the top of the resume hint.
+if (result.status === "blocked" || result.status === "failed") process.exitCode = 1;
