@@ -1,5 +1,14 @@
 import * as clack from "@clack/prompts";
-import { defaultStatePath, fileState, noState, type OnboardingRecord, type StateStore } from "./state.js";
+import {
+	defaultResumePath,
+	defaultStatePath,
+	fileResume,
+	fileState,
+	noState,
+	type OnboardingRecord,
+	type ResumeStore,
+	type StateStore,
+} from "./state.js";
 import { type Accent, bold, createTheme, dim, red, type Theme } from "./theme.js";
 import type { AnswerBag, AnswersOf, CheckNode, Node, QuestionNode, SummaryNode, TaskNode } from "./types.js";
 import { isQuestion } from "./types.js";
@@ -54,6 +63,20 @@ export interface OnboardConfig<A, Nodes extends readonly Node<A>[]> {
 	readonly interactive?: InteractiveMode;
 	/** Throw {@link OnboardError} instead of returning a non-success result. */
 	readonly throwOnFailure?: boolean;
+	/**
+	 * Save progress when the user cancels, so the flow can be resumed.
+	 *
+	 * Saved to the runtime directory — RAM-backed and cleared on logout — and
+	 * deleted on completion. Secret answers are never saved and are re-asked
+	 * on resume. Off by default, since it does persist real answers.
+	 */
+	readonly resumable?: boolean;
+	/** Pick up a previously cancelled run instead of starting over. */
+	readonly resume?: boolean;
+	/** The command printed in the resume hint, e.g. `mytool setup --resume`. */
+	readonly resumeCommand?: string;
+	/** Override the resume store. For tests. */
+	readonly resumeStore?: ResumeStore;
 	/** Override the environment source. For tests. */
 	readonly env?: Record<string, string | undefined>;
 	/** Where template chrome is written. Defaults to `process.stdout`. */
@@ -170,18 +193,65 @@ export async function onboard<
 		interactive === "always" ? true : interactive === "never" ? false : clack.isTTY(process.stdout) && !clack.isCI();
 
 	const store: StateStore = config.state === false ? noState() : (config.state ?? fileState(defaultStatePath(flowId)));
+	const resumeStore: ResumeStore = config.resumeStore ?? fileResume(defaultResumePath(flowId));
 
-	const finish = (result: OnboardResult<R>): Ret => {
+	/**
+	 * Single exit point: persists or clears resume state, then either returns
+	 * the result or throws it, depending on `throwOnFailure`.
+	 */
+	const finish = async (result: OnboardResult<R>): Promise<Ret> => {
+		// A crashed task is as worth resuming as a Ctrl-C: the answers are all
+		// collected and only the work failed. `blocked` is excluded on purpose —
+		// that means the machine is not ready, and the checks re-run anyway.
+		const worthResuming = result.status === "cancelled" || result.status === "failed";
+		if (worthResuming && config.resumable) {
+			await saveResume();
+		} else if (result.status === "completed" || result.status === "updated") {
+			// Progress is no longer partial, so the partial copy must go.
+			await resumeStore.clear().catch(() => {});
+		}
 		if (config.throwOnFailure && isFailure(result)) throw new OnboardError(result);
 		return result as Ret;
 	};
+
+	/** Writes non-secret answers so a cancelled run can be picked up again. */
+	async function saveResume(): Promise<void> {
+		const secretIds = new Set(list.filter((n) => n.node === "secret").map((n) => n.id));
+		const keep = Object.fromEntries(Object.entries(answers).filter(([id]) => !secretIds.has(id)));
+		if (Object.keys(keep).length === 0) return;
+
+		try {
+			await resumeStore.write({
+				schema: 1,
+				flowId,
+				version,
+				savedAt: new Date().toISOString(),
+				ownerPid: process.ppid,
+				answers: keep,
+			});
+		} catch {
+			// A machine that will not let us write a scratch file is not a reason
+			// to fail the run — the user simply starts over next time.
+			return;
+		}
+
+		if (!isInteractive) return;
+		const command = config.resumeCommand ?? `${slug(name)} --resume`;
+		const dropped = secretIds.size > 0 && list.some((n) => n.node === "secret" && n.id in answers);
+		out.write(`${theme.rail()}\n`);
+		out.write(`${theme.rail(dim("Progress saved. To pick up where you left off:"))}\n`);
+		out.write(`${theme.rail()}\n`);
+		out.write(`${theme.rail(bold(command))}\n`);
+		if (dropped) out.write(`${theme.rail(dim("You will be asked for your credentials again."))}\n`);
+		out.write(`${theme.rail()}\n`);
+	}
 
 	// ---- already onboarded? -------------------------------------------------
 	const record = await store.read();
 	let previouslyAnswered: ReadonlySet<string> = new Set();
 	if (record && record.flowId === flowId) {
 		if (record.version >= version) {
-			return finish({ status: "skipped", answers: {} as R });
+			return await finish({ status: "skipped", answers: {} as R });
 		}
 		// Version bumped: ask only questions this user has never seen. Their
 		// prior answers were never stored, so callbacks receive only the delta.
@@ -189,6 +259,17 @@ export async function onboard<
 	}
 
 	const answers: Answers = {};
+	// Answers restored from a cancelled run. Secrets are never among them, so
+	// those questions are asked again below.
+	let restored: readonly string[] = [];
+	if (config.resume) {
+		const saved = await resumeStore.read();
+		if (saved && saved.flowId === flowId && saved.version === version) {
+			Object.assign(answers, saved.answers);
+			restored = Object.keys(saved.answers);
+		}
+	}
+
 	const failedChecks: string[] = [];
 	const missing: MissingInput[] = [];
 	const asked: string[] = [];
@@ -202,7 +283,9 @@ export async function onboard<
 	// Denominator for `[n/m]`, recomputed as answers arrive so that `when`
 	// exclusions do not inflate it.
 	const totalQuestions = (): number =>
-		list.filter((n) => isQuestion(n) && visible(n) && !previouslyAnswered.has(n.id)).length;
+		list.filter(
+			(n) => isQuestion(n) && visible(n) && !previouslyAnswered.has(n.id) && !restored.includes(n.id),
+		).length;
 
 	try {
 		for (let i = 0; i < list.length; i++) {
@@ -251,7 +334,7 @@ export async function onboard<
 						i++;
 					}
 					const halted = await runChecks(group, answers, theme, out, isInteractive, failedChecks);
-					if (halted) return finish({ status: "blocked", failed: failedChecks });
+					if (halted) return await finish({ status: "blocked", failed: failedChecks });
 					break;
 				}
 
@@ -263,13 +346,14 @@ export async function onboard<
 				case "summary": {
 					const proceed = await runSummary(node as SummaryNode<unknown>, list, answers, theme, out, isInteractive);
 					if (proceed === CANCELLED) {
-						return finish({ status: "cancelled", partial: answers as Partial<R>, atNode: "summary" });
+						return await finish({ status: "cancelled", partial: answers as Partial<R>, atNode: "summary" });
 					}
 					break;
 				}
 
 				default: {
 					if (previouslyAnswered.has(node.id)) break;
+					if (restored.includes(node.id)) break;
 
 					const value = await resolveQuestion(node, {
 						out,
@@ -282,7 +366,7 @@ export async function onboard<
 					});
 
 					if (value === CANCELLED) {
-						return finish({ status: "cancelled", partial: answers as Partial<R>, atNode: node.id });
+						return await finish({ status: "cancelled", partial: answers as Partial<R>, atNode: node.id });
 					}
 					if (value === undefined) break; // unresolvable; recorded in `missing`
 
@@ -294,12 +378,12 @@ export async function onboard<
 	} catch (error) {
 		if (error instanceof OnboardError) throw error;
 		if (isInteractive) clack.cancel(red(`Failed at ${currentNode}.`));
-		return finish({ status: "failed", error, atNode: currentNode });
+		return await finish({ status: "failed", error, atNode: currentNode });
 	}
 
 	if (missing.length > 0) {
 		reportMissing(missing, out);
-		return finish({ status: "needs-input", missing });
+		return await finish({ status: "needs-input", missing });
 	}
 
 	const next: OnboardingRecord = {
@@ -312,9 +396,9 @@ export async function onboard<
 	await store.write(next);
 
 	if (previouslyAnswered.size > 0) {
-		return finish({ status: "updated", answers: answers as Partial<R>, added: asked });
+		return await finish({ status: "updated", answers: answers as Partial<R>, added: asked });
 	}
-	return finish({ status: "completed", answers: answers as R });
+	return await finish({ status: "completed", answers: answers as R });
 }
 
 // --------------------------------------------------------------- executors

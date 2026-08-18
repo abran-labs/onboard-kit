@@ -199,6 +199,35 @@ try {
 
 There's also `isFailure(result)` if you'd rather narrow than throw.
 
+## Resume after a cancel
+
+Set `resumable: true` and a run that gets cancelled or crashes saves its progress, printing how to pick it up:
+
+```
+│  Progress saved. To pick up where you left off:
+│
+│  mytool setup --resume
+│  You will be asked for your credentials again.
+```
+
+Then run it again with `resume: true` and the answered questions are skipped.
+
+```ts
+await onboard({
+  name: "MyTool",
+  resumable: true,
+  resume: process.argv.includes("--resume"),
+  resumeCommand: "mytool setup --resume",
+  nodes: [...],
+});
+```
+
+**Secrets are never saved**, so a resumed flow asks for them again — that's the one thing you retype. Everything else comes back.
+
+Progress lives in `$XDG_RUNTIME_DIR` (on Linux a RAM-backed tmpfs, mode `0700`, cleared when you log out), falling back to the OS temp dir. It's deleted the moment the flow completes, ignored if it came from a different flow version, and considered stale once its shell exits or after 24 hours. It never touches the durable state directory — partial answers shouldn't outlive the session.
+
+A failed `check` saves nothing: that means the machine isn't ready, and checks re-run anyway.
+
 ## Need something the catalog doesn't have?
 
 Use clack directly. onboard-kit is a layer over it, not a wall around it — the rail is the same, so it looks seamless:

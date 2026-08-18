@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { envNameFor, onboard, OnboardError, type Output } from "./run.js";
-import { memoryState } from "./state.js";
+import { memoryResume, memoryState } from "./state.js";
 
 /**
  * The engine is exercised in non-interactive mode, which is also the mode CI
@@ -459,5 +459,149 @@ describe("review rendering", () => {
 		});
 
 		expect(out.text).toContain("Provider: openai");
+	});
+});
+
+describe("resume", () => {
+	const cancelling = [
+		{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+		{ node: "secret", id: "apiKey", label: "API key" },
+		{ node: "summary" },
+	] as const;
+
+	test("saves non-secret answers when a run does not finish, never the secret", async () => {
+		const resumeStore = memoryResume();
+		const result = await onboard({
+			...base,
+			state: false,
+			resumable: true,
+			resumeStore,
+			env: { MYTOOL_PROVIDER: "openai", MYTOOL_API_KEY: "sk-super-secret" },
+			nodes: [
+				...cancelling,
+				{
+					node: "task",
+					label: "Write config",
+					run: () => {
+						throw new Error("disk full");
+					},
+				},
+			],
+		});
+
+		expect(result.status).toBe("failed");
+		const saved = await resumeStore.read();
+		expect(saved?.answers).toEqual({ provider: "openai" });
+		// The whole point: the API key was collected but must not be written.
+		expect(JSON.stringify(saved)).not.toContain("sk-super-secret");
+		expect(saved?.answers.apiKey).toBeUndefined();
+	});
+
+	test("a failed environment check saves nothing — the machine is not ready", async () => {
+		const resumeStore = memoryResume();
+		const result = await onboard({
+			...base,
+			state: false,
+			resumable: true,
+			resumeStore,
+			env: { MYTOOL_PROVIDER: "openai" },
+			nodes: [
+				{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+				{ node: "check", label: "docker", run: () => false, fix: "Install docker" },
+			],
+		});
+
+		expect(result.status).toBe("blocked");
+		expect(await resumeStore.read()).toBeUndefined();
+	});
+
+	test("a resumed run skips restored answers and re-asks secrets", async () => {
+		const resumeStore = memoryResume({
+			schema: 1,
+			flowId: "mytool",
+			version: 1,
+			savedAt: new Date().toISOString(),
+			ownerPid: process.pid,
+			answers: { provider: "openai" },
+		});
+
+		const out = sink();
+		const result = await onboard({
+			name: "MyTool",
+			interactive: "never",
+			output: out,
+			state: false,
+			resume: true,
+			resumeStore,
+			// Only the secret is available in the environment; provider comes
+			// from the saved state, proving it was not re-asked.
+			env: { MYTOOL_API_KEY: "sk-live" },
+			nodes: cancelling,
+		});
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		expect(result.answers).toEqual({ provider: "openai", apiKey: "sk-live" });
+	});
+
+	test("completing clears the saved progress", async () => {
+		const resumeStore = memoryResume({
+			schema: 1,
+			flowId: "mytool",
+			version: 1,
+			savedAt: new Date().toISOString(),
+			ownerPid: process.pid,
+			answers: { provider: "openai" },
+		});
+
+		await onboard({
+			...base,
+			state: false,
+			resume: true,
+			resumeStore,
+			env: { MYTOOL_API_KEY: "sk-live" },
+			nodes: cancelling,
+		});
+
+		expect(await resumeStore.read()).toBeUndefined();
+	});
+
+	test("saved progress from a different flow version is ignored", async () => {
+		const resumeStore = memoryResume({
+			schema: 1,
+			flowId: "mytool",
+			version: 1,
+			savedAt: new Date().toISOString(),
+			ownerPid: process.pid,
+			answers: { provider: "openai" },
+		});
+
+		const result = await onboard({
+			...base,
+			state: false,
+			version: 2,
+			resume: true,
+			resumeStore,
+			env: { MYTOOL_API_KEY: "sk-live" },
+			nodes: cancelling,
+		});
+
+		// provider was not restored, so it has no value and no default
+		expect(result.status).toBe("needs-input");
+		if (result.status !== "needs-input") return;
+		expect(result.missing.map((m) => m.id)).toEqual(["provider"]);
+	});
+
+	test("without resumable, nothing is written", async () => {
+		const resumeStore = memoryResume();
+		await onboard({
+			...base,
+			state: false,
+			resumeStore,
+			env: {},
+			nodes: [{ node: "secret", id: "apiKey", label: "API key" }],
+		});
+
+		expect(await resumeStore.read()).toBeUndefined();
 	});
 });

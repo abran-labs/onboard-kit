@@ -1,5 +1,5 @@
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
+import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 /**
@@ -94,5 +94,110 @@ function isRecord(value: unknown): value is OnboardingRecord {
 		typeof v.version === "number" &&
 		typeof v.completedAt === "string" &&
 		Array.isArray(v.answered)
+	);
+}
+
+// ------------------------------------------------------------------ resume
+
+/**
+ * A cancelled flow's partial progress.
+ *
+ * Deliberately separate from {@link OnboardingRecord}: that one is durable and
+ * holds no answers, this one holds answers and must not be durable. It lives
+ * in the runtime directory, which on Linux is a RAM-backed tmpfs cleared when
+ * the user logs out, and it is deleted the moment the flow completes.
+ *
+ * Secret answers are never included — see `run.ts`, which filters them out
+ * before this is written. A resumed flow re-asks them.
+ */
+export interface ResumeState {
+	readonly schema: 1;
+	readonly flowId: string;
+	readonly version: number;
+	readonly savedAt: string;
+	/** The shell that owned the cancelled run, so other terminals ignore it. */
+	readonly ownerPid: number;
+	/** Non-secret answers only. */
+	readonly answers: Record<string, unknown>;
+}
+
+/** How long a saved resume survives even if its shell is still alive. */
+export const RESUME_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Prefers `$XDG_RUNTIME_DIR` (tmpfs, mode 0700, cleared on logout) and falls
+ * back to the OS temp dir, which is at least cleared on reboot. Never the
+ * durable state directory — partial answers should not outlive the session.
+ */
+export function defaultResumePath(flowId: string): string {
+	const base = process.env.XDG_RUNTIME_DIR ?? tmpdir();
+	return join(base, "onboard-kit", `${flowId}.resume.json`);
+}
+
+export interface ResumeStore {
+	read(): Promise<ResumeState | undefined>;
+	write(state: ResumeState): Promise<void>;
+	clear(): Promise<void>;
+}
+
+export function fileResume(path: string): ResumeStore {
+	return {
+		async read() {
+			try {
+				const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+				return isResume(parsed) && isFresh(parsed) ? parsed : undefined;
+			} catch {
+				return undefined;
+			}
+		},
+		async write(state) {
+			await mkdir(dirname(path), { recursive: true, mode: 0o700 });
+			// 0600: the file holds real answers, even if not secret ones.
+			await writeFile(path, `${JSON.stringify(state, null, 2)}\n`, { encoding: "utf8", mode: 0o600 });
+		},
+		async clear() {
+			await rm(path, { force: true });
+		},
+	};
+}
+
+export function memoryResume(initial?: ResumeState): ResumeStore {
+	let current = initial;
+	return {
+		async read() {
+			return current;
+		},
+		async write(state) {
+			current = state;
+		},
+		async clear() {
+			current = undefined;
+		},
+	};
+}
+
+/** Stale once its shell is gone or the TTL has passed. */
+function isFresh(state: ResumeState, now = Date.now()): boolean {
+	if (now - Date.parse(state.savedAt) > RESUME_TTL_MS) return false;
+	try {
+		// Signal 0 tests for existence without delivering anything.
+		process.kill(state.ownerPid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function isResume(value: unknown): value is ResumeState {
+	if (typeof value !== "object" || value === null) return false;
+	const v = value as Partial<ResumeState>;
+	return (
+		v.schema === 1 &&
+		typeof v.flowId === "string" &&
+		typeof v.version === "number" &&
+		typeof v.savedAt === "string" &&
+		typeof v.ownerPid === "number" &&
+		typeof v.answers === "object" &&
+		v.answers !== null
 	);
 }

@@ -40,11 +40,17 @@ export {
 } from "./run.js";
 
 export {
+	defaultResumePath,
 	defaultStatePath,
+	fileResume,
 	fileState,
+	memoryResume,
 	memoryState,
 	noState,
 	type OnboardingRecord,
+	RESUME_TTL_MS,
+	type ResumeState,
+	type ResumeStore,
 	type StateStore,
 } from "./state.js";
 

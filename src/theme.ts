@@ -115,12 +115,13 @@ export interface Theme {
 /**
  * Builds the template's renderer.
  *
- * Colour policy, and the whole reason this looks calm: **hue is reserved for
- * things that need attention.** A warning is yellow and a failure is red; a
- * passing check and a completed step are the terminal's ordinary foreground,
- * because "it worked" is the expected case and should not compete for the eye.
- * Hierarchy is carried by weight — bold for titles, grey for the rail, dim for
- * secondary text.
+ * Colour policy: **hue belongs to status, weight belongs to chrome.**
+ *
+ * Anything reporting the state of something gets colour — a completed step and
+ * a passing check are green, a warning yellow, a failure red. Anything that is
+ * merely framing gets none: the rail is grey, and the title and `Next`
+ * commands are bold rather than tinted, so brand styling never competes with
+ * the status marks for the eye.
  *
  * Every colour is an ANSI slot, never fixed RGB, so the output is drawn from
  * the reader's own terminal palette and cannot clash with their background.
@@ -146,11 +147,11 @@ export function createTheme(accent?: Accent): Theme {
 		divider: (title) => rule(gray(SYM.connect), title),
 		footer: (message) => `${gray(SYM.barEnd)}  ${message}`,
 		rail: (text) => (text === undefined ? gray(SYM.bar) : `${gray(SYM.bar)}  ${text}`),
-		// Plain foreground: a completed step is not news.
-		step: (label) => `${SYM.step}  ${label}`,
+		// Green matches clack's own submitted-step symbol, so our steps and its
+		// prompts are indistinguishable in the same column.
+		step: (label) => `${green(SYM.step)}  ${label}`,
 		status: (kind, text) => {
-			// Only warn and fail get hue. A tick stays plain.
-			const mark = kind === "pass" ? SYM.pass : kind === "warn" ? yellow(SYM.warn) : red(SYM.fail);
+			const mark = kind === "pass" ? green(SYM.pass) : kind === "warn" ? yellow(SYM.warn) : red(SYM.fail);
 			return `${gray(SYM.bar)}  ${mark}  ${kind === "warn" ? dim(text) : text}`;
 		},
 		rows: (entries) => {

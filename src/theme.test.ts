@@ -2,11 +2,11 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import { createTheme } from "./theme.js";
 
 /**
- * Locks the colour policy.
+ * Locks the colour policy: hue belongs to status, weight belongs to chrome.
  *
- * The template's restraint is the product, so it needs a test: hue is spent
- * only on things that need attention, everything else is weight. A future
- * change that sprinkles colour back onto the chrome fails here.
+ * Status marks are coloured because they report state. The rail, title and
+ * `Next` commands are not, because they are framing — tinting them makes the
+ * brand compete with the marks that actually mean something.
  */
 
 beforeAll(() => {
@@ -24,6 +24,7 @@ const RESET_COLOR = "39";
 const BOLD = "1";
 const DIM = "2";
 const RESET_WEIGHT = "22";
+const GREEN = "32";
 const YELLOW = "33";
 const RED = "31";
 
@@ -40,34 +41,24 @@ describe("colour policy", () => {
 		expect(codes(theme.footer("Done"))[0]).toBe(RAIL);
 	});
 
-	test("a completed step carries no hue at all", () => {
-		expect(codes(theme.step("Writing config"))).toEqual([]);
-	});
-
-	test("a passing check carries no hue — success is the expected case", () => {
-		const hues = codes(theme.status("pass", "Node 20+")).filter((c) => c !== RAIL && c !== RESET_COLOR);
-		expect(hues).toEqual([]);
-	});
-
-	test("only warnings and failures spend colour", () => {
+	test("status marks are coloured by what they report", () => {
+		expect(codes(theme.step("Writing config"))).toContain(GREEN);
+		expect(codes(theme.status("pass", "Node 20+"))).toContain(GREEN);
 		expect(codes(theme.status("warn", "git missing"))).toContain(YELLOW);
 		expect(codes(theme.status("fail", "Node too old"))).toContain(RED);
 	});
 
-	test("without an accent the chrome is monochrome — weight only", () => {
-		const rendered = [
+	test("chrome carries no hue — the title and Next use weight instead", () => {
+		const chrome = [
 			theme.header("MyTool"),
-			theme.step("Step"),
-			theme.status("pass", "ok"),
 			theme.rows([["Provider", "OpenAI"]]),
 			theme.next([["mytool start", "launch"]]),
 		].join("\n");
 
-		const unexpected = codes(rendered).filter((c) => HUES.includes(c) && c !== RAIL);
-		expect(unexpected).toEqual([]);
-		// Hierarchy still exists, carried by weight rather than hue.
-		expect(codes(rendered)).toContain(BOLD);
-		expect(codes(rendered)).toContain(DIM);
+		// Grey rail aside, framing is never tinted.
+		expect(codes(chrome).filter((c) => HUES.includes(c) && c !== RAIL)).toEqual([]);
+		expect(codes(chrome)).toContain(BOLD);
+		expect(codes(chrome)).toContain(DIM);
 	});
 
 	test("an accent colours exactly two things: the title and the Next commands", () => {
@@ -77,7 +68,7 @@ describe("colour policy", () => {
 		expect(codes(accented.header("MyTool"))).toContain(MAGENTA);
 		expect(codes(accented.next([["mytool start", "launch"]]))).toContain(MAGENTA);
 
-		// and nothing else
+		// and nothing else — status marks keep their own meaning
 		expect(codes(accented.step("Step"))).not.toContain(MAGENTA);
 		expect(codes(accented.status("pass", "ok"))).not.toContain(MAGENTA);
 		expect(codes(accented.rail("value"))).not.toContain(MAGENTA);
