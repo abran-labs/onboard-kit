@@ -228,6 +228,22 @@ export async function onboard<
 		return result as Ret;
 	};
 
+	/**
+	 * Drops progress saved by an earlier run, once this run reaches its first
+	 * question without `resume`.
+	 *
+	 * Waiting for the first question rather than doing it at startup matters:
+	 * someone who forgets `--resume` and immediately quits keeps what they had,
+	 * while someone who actually answers something has chosen to start over. It
+	 * also covers the runs that never reach a save — blocked by a failed check,
+	 * or killed — which would otherwise leave the old answers resumable.
+	 */
+	async function discardStaleProgress(): Promise<void> {
+		if (discarded || config.resume) return;
+		discarded = true;
+		await resumeStore.clear().catch(() => {});
+	}
+
 	/** Writes non-secret answers so a cancelled run can be picked up again. */
 	async function saveResume(): Promise<void> {
 		const secretIds = new Set(list.filter((n) => n.node === "secret").map((n) => n.id));
@@ -274,6 +290,8 @@ export async function onboard<
 	}
 
 	const answers: Answers = {};
+	// Set once a fresh run commits to starting over. See discardStaleProgress.
+	let discarded = false;
 	// Answers restored from a cancelled run. Secrets are never among them, so
 	// those questions are asked again below.
 	let restored: readonly string[] = [];
@@ -373,6 +391,7 @@ export async function onboard<
 				default: {
 					if (previouslyAnswered.has(node.id)) break;
 					questionNo += 1;
+					await discardStaleProgress();
 					if (restored.includes(node.id)) {
 						// Redraw it as an answered prompt, counter and all. Skipping
 						// silently made a resumed run look like it had lost the

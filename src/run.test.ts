@@ -643,3 +643,63 @@ describe("step numbering", () => {
 		expect(result.answers).toEqual({ provider: "openai", apiKey: "sk-live", telemetry: true });
 	});
 });
+
+describe("stale progress", () => {
+	const saved = () =>
+		memoryResume({
+			schema: 1,
+			flowId: "mytool",
+			version: 1,
+			savedAt: new Date().toISOString(),
+			answers: { provider: "anthropic" },
+		});
+
+	test("a fresh run discards earlier progress once it answers something", async () => {
+		const resumeStore = saved();
+		await onboard({
+			...base,
+			state: false,
+			resumeStore,
+			env: { MYTOOL_PROVIDER: "openai" },
+			nodes: [
+				{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+				// Blocked runs never reach a save, so without the discard the old
+				// answers would stay resumable after an abandoned attempt.
+				{ node: "check", label: "gate", run: () => false, fix: "n/a" },
+			],
+		});
+
+		expect(await resumeStore.read()).toBeUndefined();
+	});
+
+	test("quitting before answering anything keeps what was already saved", async () => {
+		const resumeStore = saved();
+		await onboard({
+			...base,
+			state: false,
+			resumeStore,
+			env: {},
+			// Blocked before any question is reached: the user has not committed
+			// to starting over, so their earlier progress must survive.
+			nodes: [{ node: "check", label: "gate", run: () => false, fix: "n/a" }],
+		});
+
+		expect((await resumeStore.read())?.answers).toEqual({ provider: "anthropic" });
+	});
+
+	test("a resuming run keeps its own saved progress", async () => {
+		const resumeStore = saved();
+		const result = await onboard({
+			...base,
+			state: false,
+			resume: true,
+			resumeStore,
+			env: {},
+			nodes: [{ node: "choice", id: "provider", label: "Provider", options: [{ value: "anthropic" }] }],
+		});
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		expect(result.answers.provider).toBe("anthropic");
+	});
+});
