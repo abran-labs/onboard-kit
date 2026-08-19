@@ -249,7 +249,9 @@ await onboard({
 
 **Secrets are never saved**, so a resumed flow asks for them again — that's the one thing you retype. Everything else comes back.
 
-Progress lives in `$XDG_RUNTIME_DIR` (on Linux a RAM-backed tmpfs, mode `0700`, cleared when you log out), falling back to the OS temp dir. It's deleted the moment the flow completes, ignored if it came from a different flow version, and considered stale once its shell exits or after 24 hours. It never touches the durable state directory — partial answers shouldn't outlive the session.
+Progress lives in `$XDG_RUNTIME_DIR` — on Linux a RAM-backed tmpfs at mode `0700` — falling back to the OS temp dir. It never touches the durable state directory.
+
+It is tagged with the terminal that made it, by device *and inode*, so it dies with that terminal: closing the window makes it unusable immediately, and it is physically deleted by the next onboard-kit run, which sweeps entries whose terminal has gone. (Nothing can run at the instant a terminal closes — the process that would do the deleting exited long before — so the next run is the earliest opportunity that exists.) It is also deleted the moment a flow completes, ignored across flow versions, and expired after 24 hours.
 
 A failed `check` saves nothing: that means the machine isn't ready, and checks re-run anyway.
 

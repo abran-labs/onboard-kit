@@ -1,5 +1,5 @@
-import { readlinkSync } from "node:fs";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { readlinkSync, statSync } from "node:fs";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
@@ -129,6 +129,14 @@ export interface ResumeState {
 	 * in which case freshness rests on the TTL alone.
 	 */
 	readonly ownerTty?: string;
+	/**
+	 * The tty device's inode.
+	 *
+	 * `/dev/pts/2` is reused by later terminals, so the path alone cannot tell
+	 * "my terminal" from "a new terminal that happened to get the same number".
+	 * The inode is fresh for every allocation, so it can.
+	 */
+	readonly ownerTtyIno?: number;
 	/** Non-secret answers only. */
 	readonly answers: Record<string, unknown>;
 }
@@ -189,27 +197,75 @@ export function memoryResume(initial?: ResumeState): ResumeStore {
 }
 
 /**
- * Identifies the controlling terminal, e.g. `/dev/pts/3`.
+ * Identifies the controlling terminal, e.g. `/dev/pts/3` plus its inode.
  *
  * Linux only; undefined elsewhere or when stdin is not a tty. Callers must
  * treat undefined as "unknown", never as a mismatch.
  */
-export function currentTty(): string | undefined {
+export function currentTty(): { path: string; ino: number } | undefined {
 	try {
-		const tty = readlinkSync("/proc/self/fd/0");
-		return tty.startsWith("/dev/pts/") || tty.startsWith("/dev/tty") ? tty : undefined;
+		const path = readlinkSync("/proc/self/fd/0");
+		if (!path.startsWith("/dev/pts/") && !path.startsWith("/dev/tty")) return undefined;
+		return { path, ino: statSync(path).ino };
 	} catch {
 		return undefined;
 	}
 }
 
-/** Stale once the TTL has passed, or once a different terminal is asking. */
+/** True once the terminal that saved this is gone, or was replaced. */
+function ownerClosed(state: ResumeState): boolean {
+	if (state.ownerTty === undefined) return false; // unknown owner, cannot judge
+	try {
+		const { ino } = statSync(state.ownerTty);
+		// Same path, different inode means a new terminal reused the number.
+		return state.ownerTtyIno !== undefined && ino !== state.ownerTtyIno;
+	} catch {
+		// The device is gone: that terminal was closed.
+		return true;
+	}
+}
+
+/** Stale once its terminal closed, a different terminal asks, or the TTL lapses. */
 function isFresh(state: ResumeState, now = Date.now()): boolean {
 	if (now - Date.parse(state.savedAt) > RESUME_TTL_MS) return false;
+	if (ownerClosed(state)) return false;
 	const here = currentTty();
 	// Only a positive mismatch disqualifies it. Two unknowns are not a mismatch.
-	if (state.ownerTty !== undefined && here !== undefined && state.ownerTty !== here) return false;
+	if (state.ownerTty !== undefined && here !== undefined && state.ownerTty !== here.path) return false;
 	return true;
+}
+
+/**
+ * Deletes saved progress whose terminal has closed.
+ *
+ * Nothing can run at the moment a terminal is closed — the process that would
+ * do the deleting exited long before. So the sweep happens on the next run of
+ * anything using onboard-kit, which is the earliest opportunity that exists.
+ * Between the close and the sweep the file is already unusable: `isFresh`
+ * rejects it.
+ */
+export async function sweepClosedResumes(dir: string): Promise<number> {
+	let removed = 0;
+	try {
+		for (const name of await readdir(dir)) {
+			if (!name.endsWith(".resume.json")) continue;
+			const path = join(dir, name);
+			try {
+				const parsed: unknown = JSON.parse(await readFile(path, "utf8"));
+				if (!isResume(parsed) || ownerClosed(parsed)) {
+					await rm(path, { force: true });
+					removed += 1;
+				}
+			} catch {
+				// Unreadable or corrupt: it can never be resumed, so bin it.
+				await rm(path, { force: true });
+				removed += 1;
+			}
+		}
+	} catch {
+		// No directory yet, or unreadable. Nothing to sweep.
+	}
+	return removed;
 }
 
 function isResume(value: unknown): value is ResumeState {

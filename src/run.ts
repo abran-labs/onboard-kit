@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import * as clack from "@clack/prompts";
 import {
 	currentTty,
@@ -6,6 +7,7 @@ import {
 	fileResume,
 	fileState,
 	noState,
+	sweepClosedResumes,
 	type OnboardingRecord,
 	type ResumeStore,
 	type StateStore,
@@ -202,6 +204,10 @@ export async function onboard<
 
 	const store: StateStore = config.state === false ? noState() : (config.state ?? fileState(defaultStatePath(flowId)));
 	const resumeStore: ResumeStore = config.resumeStore ?? fileResume(defaultResumePath(flowId));
+	// Earliest chance to clear progress whose terminal has since closed.
+	if (config.resumeStore === undefined) {
+		void sweepClosedResumes(dirname(defaultResumePath(flowId)));
+	}
 
 	/**
 	 * Single exit point: persists or clears resume state, then either returns
@@ -234,7 +240,10 @@ export async function onboard<
 				flowId,
 				version,
 				savedAt: new Date().toISOString(),
-				...(currentTty() !== undefined ? { ownerTty: currentTty() as string } : {}),
+				...(() => {
+					const tty = currentTty();
+					return tty ? { ownerTty: tty.path, ownerTtyIno: tty.ino } : {};
+				})(),
 				answers: keep,
 			});
 		} catch {
