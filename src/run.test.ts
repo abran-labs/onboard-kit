@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { envNameFor, onboard, OnboardError, type Output } from "./run.js";
+import { envNameFor, numbered, onboard, OnboardError, type Output } from "./run.js";
 import { memoryResume, memoryState } from "./state.js";
 
 /**
@@ -600,5 +600,46 @@ describe("resume", () => {
 		});
 
 		expect(await resumeStore.read()).toBeUndefined();
+	});
+});
+
+describe("step numbering", () => {
+	test("counts every question, and omits the counter when there is only one", () => {
+		expect(numbered(2, 3, "API key")).toContain("[2/3]");
+		expect(numbered(2, 3, "API key")).toContain("API key");
+		expect(numbered(1, 1, "API key")).toBe("API key");
+	});
+
+	test("a resumed run numbers replayed questions as the original did", async () => {
+		// The denominator must include restored questions: they were asked, just
+		// on the earlier run. Excluding them renumbered the remaining steps, so a
+		// resumed flow showed [1/2] where the first run had shown [2/3].
+		const nodes = [
+			{ node: "choice", id: "provider", label: "Provider", options: [{ value: "openai" }] },
+			{ node: "secret", id: "apiKey", label: "API key" },
+			{ node: "confirm", id: "telemetry", label: "Telemetry" },
+		] as const;
+
+		const resumeStore = memoryResume({
+			schema: 1,
+			flowId: "mytool",
+			version: 1,
+			savedAt: new Date().toISOString(),
+			answers: { provider: "openai" },
+		});
+
+		const result = await onboard({
+			...base,
+			state: false,
+			resume: true,
+			resumeStore,
+			env: { MYTOOL_API_KEY: "sk-live", MYTOOL_TELEMETRY: "true" },
+			nodes,
+		});
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		// All three answers present: one restored, two freshly resolved.
+		expect(result.answers).toEqual({ provider: "openai", apiKey: "sk-live", telemetry: true });
 	});
 });

@@ -245,13 +245,10 @@ export async function onboard<
 
 		if (!isInteractive) return;
 		const command = config.resumeCommand ?? `${slug(name)} --resume`;
-		const hadSecret = list.some((n) => n.node === "secret" && visible(n));
 		// The rail is already closed by the cancel line above, so this sits
 		// below it as a compact two-column block.
-		const rows: (readonly [string, string])[] = [["Resume", command]];
-		if (hadSecret) rows.push(["Note", dim("your credentials will be asked again")]);
 		out.write("\n");
-		out.write(`${theme.trailing(rows)}\n`);
+		out.write(`${theme.trailing([["Resume", command]])}\n`);
 		out.write("\n");
 	}
 
@@ -288,13 +285,14 @@ export async function onboard<
 
 	// Tracked so a thrown error can name the node that threw.
 	let currentNode = "unknown";
+	// Counts every question this run covers, replayed or asked, so a resumed
+	// flow numbers its steps exactly as the original did.
+	let questionNo = 0;
 
 	// Denominator for `[n/m]`, recomputed as answers arrive so that `when`
 	// exclusions do not inflate it.
 	const totalQuestions = (): number =>
-		list.filter(
-			(n) => isQuestion(n) && visible(n) && !previouslyAnswered.has(n.id) && !restored.includes(n.id),
-		).length;
+		list.filter((n) => isQuestion(n) && visible(n) && !previouslyAnswered.has(n.id)).length;
 
 	try {
 		for (let i = 0; i < list.length; i++) {
@@ -365,11 +363,14 @@ export async function onboard<
 
 				default: {
 					if (previouslyAnswered.has(node.id)) break;
+					questionNo += 1;
 					if (restored.includes(node.id)) {
-						// Redraw it as an answered prompt. Skipping silently made a
-						// resumed run look like it had lost the earlier answers.
+						// Redraw it as an answered prompt, counter and all. Skipping
+						// silently made a resumed run look like it had lost the
+						// earlier answers, and dropping the counter made the
+						// remaining steps look misnumbered.
 						if (isInteractive) {
-							out.write(`${theme.step(node.label)}\n`);
+							out.write(`${theme.step(numbered(questionNo, totalQuestions(), node.label))}\n`);
 							out.write(`${theme.rail(dim(displayValue(node, answers[node.id])))}\n`);
 							out.write(`${theme.rail()}\n`);
 						}
@@ -381,7 +382,7 @@ export async function onboard<
 						isInteractive,
 						product: name,
 						env,
-						index: asked.length + 1,
+						index: questionNo,
 						total: totalQuestions(),
 						missing,
 					});
@@ -543,13 +544,17 @@ async function resolveQuestion(node: QuestionNode, ctx: QuestionCtx): Promise<un
 		return undefined;
 	}
 
-	const counter = ctx.total > 1 ? `${dim(`[${ctx.index}/${ctx.total}]`)}  ` : "";
-	const value = await promptFor(node, `${counter}${node.label}`);
+	const value = await promptFor(node, numbered(ctx.index, ctx.total, node.label));
 	if (clack.isCancel(value)) {
 		clack.cancel("Cancelled.");
 		return CANCELLED;
 	}
 	return value;
+}
+
+/** `[2/3]  API key` — omitted when there is only one question to ask. */
+export function numbered(index: number, total: number, label: string): string {
+	return total > 1 ? `${dim(`[${index}/${total}]`)}  ${label}` : label;
 }
 
 async function promptFor(node: QuestionNode, message: string): Promise<unknown> {
