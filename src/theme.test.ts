@@ -150,10 +150,22 @@ describe("trailing blocks", () => {
 		expect(lines[0]?.indexOf("mytool")).toBe(lines[1]?.indexOf("credentials"));
 	});
 
-	test("a wordmark is indented to clear the rail", () => {
+	test("a wordmark is rail content, and its first row opens the frame", () => {
+		// It reads as *inside* the frame, not a banner floating above it — but
+		// the corner costs no line of its own: row one rides the `┌`.
 		process.env.NO_COLOR = "1";
-		const rendered = createTheme().logo(["███", "█  "]).split("\n");
+		const theme = createTheme();
+		const logoLines = theme.logo(["███", "█  "]).split("\n");
 		process.env.NO_COLOR = "";
-		expect(rendered.every((l) => l.startsWith("   "))).toBe(true);
+		expect(logoLines).toEqual(["┌  ███", "│  █  "]);
+	});
+
+	test("a corner row below zero lets the letters overhang the frame", () => {
+		// Lifting the wordmark cannot clip it, so the rows it rises into carry
+		// blank indent rather than rail — the corner joins partway down.
+		process.env.NO_COLOR = "1";
+		const lines = createTheme().logo(["aa", "bb", "cc", "dd"], 2).split("\n");
+		process.env.NO_COLOR = "";
+		expect(lines).toEqual(["   aa", "   bb", "┌  cc", "│  dd"]);
 	});
 });

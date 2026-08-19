@@ -35,7 +35,7 @@ const ACCENT_CODES: Record<Accent, string> = {
 
 const ESC = "\x1b[";
 
-function colorEnabled(): boolean {
+export function colorEnabled(): boolean {
 	const env = process.env;
 	if (env.NO_COLOR !== undefined && env.NO_COLOR !== "") return false;
 	if (env.FORCE_COLOR !== undefined && env.FORCE_COLOR !== "0") return true;
@@ -66,6 +66,8 @@ export const dim = (text: string): string => wrap("2", "22", text);
  */
 export const gray = color("90");
 export const bold = (text: string): string => wrap("1", "22", text);
+/** Italic (SGR 3). Widely but not universally supported; degrades to plain. */
+export const italic = (text: string): string => wrap("3", "23", text);
 export const red = color("31");
 export const green = color("32");
 export const yellow = color("33");
@@ -90,16 +92,23 @@ export const SYM = {
 	pointer: unicodeOr("\u276f", ">"),
 } as const;
 
-const HEADER_WIDTH = 48;
+const HEADER_WIDTH = 40;
 
 export interface Theme {
 	readonly accent: (text: string) => string;
+	/** Raw SGR code for the active accent, or undefined. For `wordmark()`'s `accentCode` option. */
+	readonly accentCode: string | undefined;
 	/** `┌  Name ────────` — opens the rail. */
 	header(name: string): string;
 	/** A bare `┌` — opens the rail when a wordmark already carries the name. */
 	open(): string;
-	/** A wordmark, indented to sit above the rail. */
-	logo(lines: readonly string[]): string;
+	/**
+	 * A wordmark as rail content. The opening corner (`┌`) rides row
+	 * `cornerRow`; rows below it carry `│`, rows above carry blank indent, so
+	 * the letters overhang the corner instead of being cut off by it.
+	 * Replaces `open()`; do not call both.
+	 */
+	logo(lines: readonly string[], cornerRow?: number): string;
 	/** `├  Title ────────` — a divider that keeps the rail connected. */
 	divider(title: string): string;
 	/** `└  message` — closes the rail. */
@@ -150,11 +159,18 @@ export function createTheme(accent?: Accent): Theme {
 
 	return {
 		accent: paint,
+		accentCode: accent ? ACCENT_CODES[accent] : undefined,
 		// The rail is frame, not content: every corner and join is the same grey
 		// as the bar itself, and accent never touches it.
 		header: (name) => rule(gray(SYM.barStart), name),
 		open: () => gray(SYM.barStart),
-		logo: (lines) => lines.map((line) => `   ${paint(line)}`).join("\n"),
+		logo: (lines, cornerRow = 0) =>
+			lines
+				.map((line, i) => {
+					const prefix = i < cornerRow ? " " : gray(i === cornerRow ? SYM.barStart : SYM.bar);
+					return `${prefix}  ${line}`;
+				})
+				.join("\n"),
 		divider: (title) => rule(gray(SYM.connect), title),
 		footer: (message) => `${gray(SYM.barEnd)}  ${message}`,
 		rail: (text) => (text === undefined ? gray(SYM.bar) : `${gray(SYM.bar)}  ${text}`),

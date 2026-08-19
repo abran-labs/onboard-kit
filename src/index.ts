@@ -56,7 +56,14 @@ export {
 
 export type { Accent } from "./theme.js";
 
-export { wordmark, WORDMARK_ROWS } from "./wordmark.js";
+/**
+ * Text styling, for the places the template hands you a string of your own —
+ * a `welcome` subtitle, say. Each is an ANSI slot resolved from the reader's
+ * palette, and closes with its specific reset so they nest safely.
+ */
+export { bold, dim, gray, green, italic, red, yellow } from "./theme.js";
+
+export { wordmark, wordmarkCorner, type WordmarkOptions } from "./wordmark.js";
 
 export type {
 	AnswerBag,

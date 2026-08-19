@@ -13,7 +13,7 @@ import {
 	type StateStore,
 } from "./state.js";
 import { type Accent, bold, createTheme, dim, red, type Theme } from "./theme.js";
-import { wordmark } from "./wordmark.js";
+import { wordmark, wordmarkCorner } from "./wordmark.js";
 import type { AnswerBag, AnswersOf, CheckNode, Node, QuestionNode, SummaryNode, TaskNode } from "./types.js";
 import { isQuestion } from "./types.js";
 
@@ -197,7 +197,22 @@ export async function onboard<
 
 	const flowId = config.id ?? slug(name);
 	const theme = createTheme(accent);
-	const out: Output = output ?? process.stdout;
+	const sink: Output = output ?? process.stdout;
+	// Every block opens with a blank rail so they are evenly separated. The
+	// first one is different: with no banner above it there is no rail yet to
+	// continue, and the lone `│` reads as a stray mark. So track whether
+	// anything has been drawn, and let the first block start flush.
+	let drawn = false;
+	const out: Output = {
+		write(chunk) {
+			drawn = true;
+			return sink.write(chunk);
+		},
+	};
+	/** A blank rail between blocks — nothing at all before the first one. */
+	const gap = (): void => {
+		if (drawn) out.write(`${theme.rail()}\n`);
+	};
 
 	const isInteractive =
 		interactive === "always" ? true : interactive === "never" ? false : clack.isTTY(process.stdout) && !clack.isCI();
@@ -330,15 +345,36 @@ export async function onboard<
 			switch (node.node) {
 				case "welcome": {
 					if (!isInteractive) break;
-					const art = logo === true ? wordmark(node.title ?? name) : logo ? logo.split("\n") : [];
+					// The wordmark rides three half-cells above the frame corner, so the
+					// letters lead and the rail joins them a line and a half down.
+					const LIFT_HALVES = 3;
+					const art =
+						logo === true
+							? wordmark(node.title ?? name, {
+									scale: 1,
+									halfStep: LIFT_HALVES % 2 === 1,
+									...(theme.accentCode !== undefined ? { accentCode: theme.accentCode } : {}),
+								})
+							: logo
+								? logo.split("\n").map(theme.accent)
+								: [];
 					if (art.length > 0) {
-						out.write(`${theme.logo(art)}\n`);
-						out.write("\n");
-						out.write(`${theme.open()}\n`);
+						// logo() opens the frame itself, partway down the block.
+						out.write(`${theme.logo(art, logo === true ? wordmarkCorner(LIFT_HALVES) : 0)}\n`);
 					} else {
-						out.write(`${theme.header(node.title ?? name)}\n`);
+						// A wordmark leads with its own overhanging rows, so it needs no
+						// run-up. A one-line header has none, and sits on the shell prompt
+						// without one.
+						out.write(`\n${theme.header(node.title ?? name)}\n`);
 					}
-					if (node.subtitle) out.write(`${theme.rail()}\n${theme.rail(node.subtitle)}\n`);
+					if (node.subtitle) {
+						// One rail of air between the wordmark and the blurb. Lines are
+						// written through untouched so the caller's own styling survives.
+						out.write(`${theme.rail()}\n`);
+						for (const line of node.subtitle.split("\n")) {
+							out.write(`${line === "" ? theme.rail() : theme.rail(line)}\n`);
+						}
+					}
 					break;
 				}
 
@@ -369,7 +405,7 @@ export async function onboard<
 						if (visible(peek)) group.push(peek as CheckNode<unknown>);
 						i++;
 					}
-					const halted = await runChecks(group, answers, theme, out, isInteractive, failedChecks);
+					const halted = await runChecks(group, answers, theme, out, gap, isInteractive, failedChecks);
 					if (halted) return await finish({ status: "blocked", failed: failedChecks });
 					break;
 				}
@@ -460,13 +496,14 @@ async function runChecks(
 	answers: Answers,
 	theme: Theme,
 	out: Output,
+	gap: () => void,
 	isInteractive: boolean,
 	failed: string[],
 ): Promise<boolean> {
 	// Leading blank rail, no trailing one — the same shape clack gives a prompt,
 	// so every block in the flow is separated by exactly one rail line.
 	if (isInteractive) {
-		out.write(`${theme.rail()}\n`);
+		gap();
 		out.write(`${theme.step("Checking your environment")}\n`);
 	}
 

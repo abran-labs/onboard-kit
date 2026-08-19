@@ -42,6 +42,14 @@ export type Validator = (value: string) => string | true;
 export interface WelcomeNode<A> {
 	readonly node: "welcome";
 	readonly title?: string;
+	/**
+	 * Optional blurb under the wordmark. Off unless you set it — the banner
+	 * says the product's name, and most flows need nothing more.
+	 *
+	 * Newlines are honoured, and the text is written through untouched, so
+	 * embedded styling survives: use the exported `bold`, `dim`, `green` and
+	 * friends, or any escape sequence of your own.
+	 */
 	readonly subtitle?: string;
 	readonly when?: (answers: A) => boolean;
 }

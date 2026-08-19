@@ -366,6 +366,63 @@ describe("onboarding state", () => {
 	});
 });
 
+describe("welcome banner", () => {
+	async function banner(node: Record<string, unknown>, logo?: true) {
+		const out = sink();
+		process.env.NO_COLOR = "1";
+		await onboard({
+			name: "MyTool",
+			interactive: "always",
+			output: out,
+			state: false,
+			...(logo ? { logo } : {}),
+			nodes: [node] as never,
+		});
+		process.env.NO_COLOR = "";
+		return out.text.split("\n");
+	}
+
+	test("no subtitle by default — the banner is just the name", async () => {
+		expect((await banner({ node: "welcome" })).join("\n")).toMatch(/^\n┌ {2}MyTool ─+\n$/);
+	});
+
+	test("no welcome node means no banner and no orphan rail", async () => {
+		const out = sink();
+		process.env.NO_COLOR = "1";
+		await onboard({
+			name: "MyTool",
+			interactive: "always",
+			output: out,
+			state: false,
+			nodes: [{ node: "check", label: "Node 20 or newer", run: () => true }],
+		});
+		process.env.NO_COLOR = "";
+
+		// Straight into the first block: no `┌`, no rule, and no lone `│` above
+		// it — there is no rail yet for that rail to continue.
+		expect(out.text.split("\n")[0]).toBe("◇  Checking your environment");
+	});
+
+	test("the two banner styles differ in their run-up", async () => {
+		// A wordmark leads with rows that overhang the corner, so it starts flush.
+		// A one-line header has no such run-up and takes a blank line instead.
+		expect((await banner({ node: "welcome" }))[0]).toBe("");
+		expect((await banner({ node: "welcome" }, true))[0]).not.toBe("");
+	});
+
+	test("a subtitle keeps its own line breaks, one rail of air below the wordmark", async () => {
+		const lines = await banner({ node: "welcome", subtitle: "First line\n\nThird line" });
+		const first = lines.findIndex((l) => l.includes("First line"));
+
+		expect(first).toBeGreaterThan(0);
+		// A bare rail separates the blurb from the letters above it.
+		expect(lines[first - 1]).toBe("│");
+		// The caller's blank line survives as a bare rail, not "│  ".
+		expect(lines[first + 1]).toBe("│");
+		expect(lines[first + 2]).toContain("Third line");
+	});
+});
+
 describe("non-interactive output", () => {
 	test("display nodes stay silent, work nodes still report", async () => {
 		const out = sink();

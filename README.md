@@ -27,7 +27,7 @@ await onboard({
 ```
 
 ```
-┌  MyTool ──────────────────────────────────────
+┌  MyTool ──────────────────────────────
 │
 │  Let's get you set up.
 │
@@ -40,7 +40,7 @@ await onboard({
 ◇  [2/2]  API key
 │  ••••••••••••••••
 │
-├  Review ──────────────────────────────────────
+├  Review ──────────────────────────────
 │
 │  Which provider?   OpenAI
 │  API key           •••••  (hidden)
@@ -81,7 +81,7 @@ Twelve nodes, all plain objects discriminated on `node`. That's all of them.
 
 | | |
 |---|---|
-| `{ node: "welcome", title?, subtitle? }` | Opening banner |
+| `{ node: "welcome", title?, subtitle? }` | Opening banner — omit the node entirely to start with no banner |
 | `{ node: "note", title?, body }` | Boxed callout |
 | `{ node: "done", message?, next? }` | Closing frame with a command list |
 
@@ -199,25 +199,59 @@ try {
 
 There's also `isFailure(result)` if you'd rather narrow than throw.
 
-## Wordmark
+## Three ways to open
 
-Set `logo: true` and your product name renders in the template's block font, replacing the header rule — the wordmark *is* the title, so printing both would just say the name twice.
+How a flow starts is the one visual choice the template leaves you, because it is really a choice about how loud your tool wants to be. There are three, and they are one config key apart.
+
+**A header rule** — the default. Your name in bold, a grey rule out to column 40, and the same rule reappears at every `divider` so the whole flow reads as one frame.
 
 ```
-   █   █ █   █ █████  ██   ██  █
-   ██ ██  █ █    █   █  █ █  █ █
-   █ █ █   █     █   █  █ █  █ █
-   █   █   █     █   █  █ █  █ █
-   █   █   █     █    ██   ██  ████
-
-┌
-│  Let's get you set up.
+┌  MyTool ──────────────────────────────
 │
+◇  Checking your environment
 ```
 
-It scales itself to the terminal: two cells per pixel when there's room (a terminal cell is about twice as tall as it is wide, so one cell per pixel renders everything at double height and reads as tall and skinny), one cell when there isn't, and nothing at all below that — a wrapped logo looks broken, so a narrow terminal just gets the plain header rule.
+**A wordmark** — `logo: true` draws your name in the template's block font. It replaces the header rule rather than sitting above it: the wordmark *is* the title, and printing both just says the name twice. The letters lead the rail, rising a line and a half above the corner, so the frame joins them partway down instead of capping them.
 
-Pass a **string** instead to supply your own art, which is also how you use another font entirely:
+```
+               ▄            ▄
+   ▄▄▄▄▄ ▄  ▄ ▄█▄ ▄▄▄▄ ▄▄▄▄ █
+┌  █░█░█ █░░█  █░ █░░█ █░░█ █░░
+│  █▒█▒█ █▄▄█  █▄ █▄▄█ █▄▄█ █▄▄
+│           █
+│        ▀▀▀▀
+│
+◇  Checking your environment
+```
+
+**Nothing at all** — omit the `welcome` node and the flow starts on its first real step. No corner, no rule, and no leading rail: there is no frame above it for a rail to continue, so the first block starts flush.
+
+```
+◇  Checking your environment
+│  ✔  Node 20 or newer
+```
+
+`npx onboard-kit demo` ships with all three; two commented lines in `bin/onboard-kit.mjs` switch between them.
+
+### Wordmark details
+
+Letters are drawn in half-blocks, two pixel rows per character cell, which is what lets the block rise by half a line and take its shadow fill on the same cell as its ink. Ink is bold and takes your `accent`; the shadow is always grey, so the brand never competes with the status marks.
+
+A name too wide for the terminal draws nothing rather than wrapping — a wrapped logo looks broken — and the flow falls back to the header rule. Unsupported characters degrade to blanks rather than throwing, since a logo is decoration and must never be able to fail a setup flow.
+
+### A subtitle
+
+Off unless you ask for it. Set `subtitle` on the `welcome` node and it appears one rail below the banner. Your line breaks are kept, and the text is written through untouched, so styling survives — `bold`, `italic`, `dim`, `gray`, `green`, `yellow` and `red` are exported for it.
+
+```ts
+import { bold, green } from "onboard-kit";
+
+{ node: "welcome", subtitle: `${bold("Ship faster.")}\n\nRun ${green("mytool start")} when you're done.` }
+```
+
+### Your own art
+
+Pass a **string** instead of `true` to supply art of your own, which is also how you use another font entirely:
 
 ```ts
 import figlet from "figlet";

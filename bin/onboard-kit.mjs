@@ -19,7 +19,9 @@ if (command !== "demo") {
 const result = await onboard({
 	name: "MyTool",
 	id: "onboard-kit-demo",
-	logo: true,
+	// Two banner styles. `logo: true` draws the name as a block wordmark that
+	// leads the rail; omit it and the name becomes a bold header rule instead.
+	// logo: true,
 	state: false, // the demo always runs
 	interactive: "always",
 
@@ -31,7 +33,10 @@ const result = await onboard({
 	resumeCommand: "bun run demo --resume",
 
 	nodes: [
-		{ node: "welcome", subtitle: "This is the onboard-kit demo. Nothing is written to disk." },
+		// Three banner styles: a `welcome` node with `logo: true` above draws the
+		// block wordmark, a `welcome` node without it draws a bold header rule,
+		// and no `welcome` node at all — this — starts straight at the first step.
+		// { node: "welcome" },
 
 		{
 			node: "check",
