@@ -273,7 +273,7 @@ bun install
 bun run check     # typechecks src and tests
 bun test
 bun run build
-bun run --silent demo   # --silent suppresses bun's own "$ ..." script echo
+bun run demo
 ```
 
 ## License
