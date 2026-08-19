@@ -261,6 +261,40 @@ await onboard({ name: "MyTool", logo: figlet.textSync("MyTool", "Block"), nodes:
 
 onboard-kit doesn't depend on figlet — it just takes the string. Unsupported characters in the built-in font degrade to blanks rather than throwing, since a logo is decoration and must never fail a setup flow.
 
+## Going back
+
+Picked the wrong provider and only realised while typing the API key? **Escape steps back.** The keys are named in a footer inside every prompt's frame — the same one clack draws under its lists, extended and given to the prompts it leaves bare, so the line never comes and goes as the question type changes:
+
+```
+◇  [1/3]  Which provider?
+│  OpenAI
+│
+◆  [2/3]  API key
+│  sk-abc
+│  ↑/↓ to navigate • Enter: confirm • Esc: back • Ctrl+C: quit
+└
+```
+
+It is the same line on every prompt — a list, a text field, a yes/no — whether or not each key does something there. A footer is chrome, not a status line: you read it once and then stop seeing it, and an entry that comes and goes with the kind of question reads as the *keys* coming and going. `multiChoice` is the one that differs, and only because it adds `Space: select` rather than dropping anything. The footer leaves with its prompt rather than piling up in the scrollback.
+
+The `summary` is the one prompt without one. By the time you reach `Apply these changes?` the keys have been named under every question you answered, and this is the one place the flow asks for a decision rather than an answer — a key list under it would compete with the table it is about. The keys all still work.
+
+Going back *un-draws*. The question you left and everything after it is erased from the terminal and asked again, so the flow never accumulates a transcript of the answers you changed your mind about — what's on screen is always what you actually answered, step numbering included. Answers you already gave come back as the starting value, so returning to a field means editing it, not retyping it.
+
+Three things bound it, all for the same reason — a step back must never claim to undo something it can't:
+
+- **A `task` is a commit point.** Once it has run it has changed something outside the flow, so the questions behind it stop being reachable.
+- **The review steps back too.** Escape at `Apply these changes?` returns to the last question rather than cancelling — that's where a wrong answer is usually spotted.
+- **Secrets are retyped.** They are never redisplayed, so there is nothing to offer back.
+
+Escape on the very first question re-asks it rather than quitting: a back key that drops you out of the flow the moment there's nothing behind you is a trap.
+
+Turn it off with `back: false` and Escape goes back to cancelling.
+
+**Tab and Shift+Tab** step through the options too — on a list and on a yes/no — alongside the arrows and their vim equivalents (`j`/`k`). Tab is what a lot of people reach for first, and having it do nothing is a small, avoidable disappointment.
+
+The one prompt that keeps clack's own footer untouched is `pick`, which already ships one of its own (`↑/↓ to select • Enter: confirm • Type: to search`) that isn't ours to extend.
+
 ## Resume after a cancel
 
 Set `resumable: true` and a run that gets cancelled or crashes saves its progress, printing how to pick it up:

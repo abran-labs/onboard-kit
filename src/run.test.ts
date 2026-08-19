@@ -1,5 +1,6 @@
+import { PassThrough } from "node:stream";
 import { describe, expect, test } from "bun:test";
-import { envNameFor, numbered, onboard, OnboardError, type Output } from "./run.js";
+import { envNameFor, numbered, onboard, OnboardError, type OnboardResult, type Output } from "./run.js";
 import { memoryResume, memoryState } from "./state.js";
 
 /**
@@ -758,5 +759,352 @@ describe("stale progress", () => {
 		expect(result.status).toBe("completed");
 		if (result.status !== "completed") return;
 		expect(result.answers.provider).toBe("anthropic");
+	});
+});
+
+// ---------------------------------------------------------------- navigation
+
+/**
+ * Just enough terminal to assert on what a run leaves on screen.
+ *
+ * Going back is only correct if the questions after it are *gone*, and a raw
+ * capture cannot show that: it holds every frame ever drawn, erased or not.
+ * Replaying the writes into a grid is what makes the difference visible.
+ */
+function render(text: string): string {
+	const lines: string[] = [""];
+	let row = 0;
+	let col = 0;
+	const csi = /\x1b\[([?0-9;]*)([A-Za-z])/g;
+	let at = 0;
+	for (let m = csi.exec(text); ; m = csi.exec(text)) {
+		const end = m ? m.index : text.length;
+		for (let k = at; k < end; k++) {
+			const ch = text[k] as string;
+			if (ch === "\n") {
+				row += 1;
+				col = 0;
+				while (lines.length <= row) lines.push("");
+			} else if (ch === "\r") {
+				col = 0;
+			} else {
+				const line = (lines[row] ?? "").padEnd(col, " ");
+				lines[row] = line.slice(0, col) + ch + line.slice(col + 1);
+				col += 1;
+			}
+		}
+		if (!m) break;
+		at = m.index + m[0].length;
+		const n = m[1] === "" || m[1] === undefined ? 1 : Number.parseInt(m[1], 10) || 0;
+		if (m[2] === "A") row = Math.max(0, row - n);
+		else if (m[2] === "B") row += n;
+		else if (m[2] === "D") col = Math.max(0, col - n);
+		else if (m[2] === "G" || m[2] === "H") col = 0;
+		else if (m[2] === "J") {
+			lines[row] = (lines[row] ?? "").slice(0, col);
+			lines.length = row + 1;
+		}
+	}
+	return lines.join("\n");
+}
+
+function fakeTty(): NodeJS.ReadStream {
+	const stream = new PassThrough();
+	return Object.assign(stream, { isTTY: true, setRawMode: () => stream }) as unknown as NodeJS.ReadStream;
+}
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Sends keys one at a time, waiting for the screen to stop changing between
+ * them — a fixed delay would race the prompt that is still drawing itself.
+ *
+ * The window has to outlast clack's 50ms escape-sequence timeout: a lone
+ * Escape is only recognised once nothing follows it, so a key sent sooner
+ * would be read as the tail of an escape sequence and swallowed.
+ */
+async function drive(input: NodeJS.ReadStream, out: { text: string }, keys: readonly string[]): Promise<string[]> {
+	// The screen as it stood before each key. The key footer only exists while
+	// its prompt is on screen, so the finished transcript cannot show it.
+	const snaps: string[] = [];
+	for (const key of keys) {
+		let size = -1;
+		for (let quiet = 0; quiet < 3; quiet += 1) {
+			if (out.text.length !== size) {
+				size = out.text.length;
+				quiet = -1;
+			}
+			await sleep(30);
+		}
+		snaps.push(render(out.text));
+		(input as unknown as PassThrough).write(key);
+	}
+	return snaps;
+}
+
+const ESC = "\x1b";
+const ENTER = "\r";
+const DOWN = "\x1b[B";
+const TAB = "\t";
+const SHIFT_TAB = "\x1b[Z";
+
+async function flow(keys: readonly string[], config: Record<string, unknown> = {}) {
+	const out = sink();
+	const input = fakeTty();
+	process.env.NO_COLOR = "1";
+	const run = onboard({
+		name: "MyTool",
+		interactive: "always",
+		state: false,
+		output: out,
+		input,
+		nodes: [
+			{
+				node: "choice",
+				id: "provider",
+				label: "Provider",
+				options: [{ value: "openai", label: "OpenAI" }, { value: "anthropic", label: "Anthropic" }],
+			},
+			{ node: "text", id: "apiKey", label: "API key" },
+			{ node: "confirm", id: "telemetry", label: "Telemetry" },
+		],
+		...config,
+	} as never);
+	const snaps = await drive(input, out, keys);
+	// Built by spreading, so the node list no longer infers its own answers —
+	// the loose bag is what these tests assert against.
+	const result = (await run) as OnboardResult<Record<string, unknown>>;
+	process.env.NO_COLOR = "";
+	return { result, snaps, screen: render(out.text) };
+}
+
+describe("stepping back", () => {
+	test("Escape returns to the previous question and re-asks it", async () => {
+		const { result, screen } = await flow([ENTER, "sk-1", ENTER, ESC, "2", ENTER, ENTER]);
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		// The key was offered back for editing rather than thrown away, so the
+		// typed `2` appends to what was already there.
+		expect(result.answers).toEqual({ provider: "openai", apiKey: "sk-12", telemetry: true });
+	});
+
+	test("the question stepped back over is erased, not crossed out below", async () => {
+		// Pick OpenAI, step back off the next question, pick Anthropic instead.
+		const { result, screen } = await flow([ENTER, ESC, DOWN, ENTER, "k", ENTER, ENTER]);
+
+		expect(result.status === "completed" && result.answers.provider).toBe("anthropic");
+		// The abandoned answer is gone from the screen entirely — not struck
+		// through, not left above the second attempt.
+		expect(screen).not.toContain("OpenAI");
+		expect(screen).toContain("Anthropic");
+		// And the counter is not spent on the attempt that was taken back.
+		expect(screen.match(/\[1\/3\]/g)?.length ?? 0).toBe(1);
+		expect(screen.match(/\[2\/3\]/g)?.length ?? 0).toBe(1);
+	});
+
+	test("Escape on the first question re-asks it rather than quitting", async () => {
+		const { result } = await flow([ESC, DOWN, ENTER, "k", ENTER, ENTER]);
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		expect(result.answers.provider).toBe("anthropic");
+	});
+
+	test("Ctrl-C still cancels, at any depth", async () => {
+		const { result } = await flow([ENTER, "sk-1", ENTER, "\x03"]);
+
+		expect(result.status).toBe("cancelled");
+		if (result.status !== "cancelled") return;
+		expect(result.atNode).toBe("telemetry");
+		expect(result.partial).toEqual({ provider: "openai", apiKey: "sk-1" });
+	});
+
+	test("`back: false` puts Escape back to cancelling", async () => {
+		const { result } = await flow([ENTER, ESC], { back: false });
+
+		expect(result.status).toBe("cancelled");
+		if (result.status !== "cancelled") return;
+		expect(result.atNode).toBe("apiKey");
+	});
+
+	test("the key footer names Escape, under the prompt Escape would undo", async () => {
+		const { snaps } = await flow([ENTER, "k", ENTER, ENTER]);
+
+		expect(snaps[0]).toContain("↑/↓ to navigate • Enter: confirm • Esc: back • Ctrl+C: quit");
+	});
+
+	test("every prompt carries it, not just the ones clack gives a footer", async () => {
+		const { snaps } = await flow([ENTER, "k", ENTER, ENTER]);
+
+		const line = "↑/↓ to navigate • Enter: confirm • Esc: back • Ctrl+C: quit";
+		// The list, the text field clack draws no footer for at all, and the
+		// confirm: one line, unchanged, wherever the flow has got to.
+		expect(snaps[0]).toContain(line);
+		expect(snaps[1]).toContain(line);
+		expect(snaps[3]).toContain(line);
+	});
+
+	test("it sits inside the frame, above the closing corner", async () => {
+		const { snaps } = await flow([ENTER, "k", ENTER, ENTER]);
+
+		// Last line is the row the cursor rests on, below the frame.
+		expect(snaps[1]?.split("\n").slice(-3, -1)).toEqual([
+			"│  ↑/↓ to navigate • Enter: confirm • Esc: back • Ctrl+C: quit",
+			"└",
+		]);
+	});
+
+	test("the footer leaves with its prompt rather than piling up in the scrollback", async () => {
+		const { screen } = await flow([ENTER, "k", ENTER, ENTER]);
+		expect(screen).not.toContain("Ctrl+C: quit");
+	});
+
+	test("a validation message keeps its place — the footer displaces nothing", async () => {
+		const out = sink();
+		const input = fakeTty();
+		process.env.NO_COLOR = "1";
+		const run = onboard({
+			name: "MyTool",
+			interactive: "always",
+			state: false,
+			output: out,
+			input,
+			nodes: [
+				{ node: "text", id: "one", label: "One", validate: (v: string) => (v.length < 3 ? "too short" : true) },
+				{ node: "text", id: "two", label: "Two" },
+			],
+		} as never);
+		const snaps = await drive(input, out, ["a", ENTER, "bc", ENTER, "x", ENTER]);
+		await run;
+		process.env.NO_COLOR = "";
+
+		// The rejected submit: clack closes that frame with the message rather
+		// than a bare corner, and the footer goes above it, not over it.
+		expect(snaps[2]?.split("\n").slice(-3, -1)).toEqual([
+			"│  ↑/↓ to navigate • Enter: confirm • Esc: back • Ctrl+C: quit",
+			"└  too short",
+		]);
+	});
+});
+
+describe("moving between options", () => {
+	test("Tab steps down the list and Shift+Tab steps back up", async () => {
+		// Down to Anthropic, down to nothing further, then back up.
+		const { result } = await flow([TAB, TAB, SHIFT_TAB, ENTER, "k", ENTER, ENTER]);
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		expect(result.answers.provider).toBe("anthropic");
+	});
+
+	test("Tab reaches a confirm too, which clack moves on any cursor key", async () => {
+		const { result } = await flow([ENTER, "k", ENTER, TAB, ENTER]);
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		expect(result.answers.telemetry).toBe(false);
+	});
+
+	test("the arrows and their vim equivalents still work", async () => {
+		const byArrow = await flow([DOWN, ENTER, "k", ENTER, ENTER]);
+		const byVim = await flow(["j", ENTER, "k", ENTER, ENTER]);
+
+		const picked = (r: OnboardResult<Record<string, unknown>>) => r.status === "completed" && r.answers.provider;
+		expect(picked(byArrow.result)).toBe("anthropic");
+		expect(picked(byVim.result)).toBe("anthropic");
+	});
+});
+
+describe("what a step back cannot undo", () => {
+	async function flowWith(nodes: unknown[], keys: readonly string[]) {
+		const out = sink();
+		const input = fakeTty();
+		process.env.NO_COLOR = "1";
+		const run = onboard({
+			name: "MyTool",
+			interactive: "always",
+			state: false,
+			output: out,
+			input,
+			nodes,
+		} as never);
+		await drive(input, out, keys);
+		const result = (await run) as OnboardResult<Record<string, unknown>>;
+		process.env.NO_COLOR = "";
+		return { result, screen: render(out.text) };
+	}
+
+	const questions = [
+		{ node: "text", id: "one", label: "One" },
+		{ node: "text", id: "two", label: "Two" },
+	];
+
+	test("the review goes without a footer — its keys have been named all flow", async () => {
+		const out = sink();
+		const input = fakeTty();
+		process.env.NO_COLOR = "1";
+		const run = onboard({
+			name: "MyTool",
+			interactive: "always",
+			state: false,
+			output: out,
+			input,
+			nodes: [{ node: "text", id: "one", label: "One" }, { node: "summary" }],
+		} as never);
+		const snaps = await drive(input, out, ["a", ENTER, ENTER]);
+		await run;
+		process.env.NO_COLOR = "";
+
+		expect(snaps[0]).toContain("↑/↓ to navigate • Enter: confirm");
+		expect(snaps[2]).toContain("Apply these changes?");
+		expect(snaps[2]).not.toContain("Enter: confirm");
+	});
+
+	test("the review's keys still work, footer or no footer", async () => {
+		const { result } = await flowWith([{ node: "confirm", id: "one", label: "One" }, { node: "summary" }], [
+			ENTER, // One: yes
+			TAB, // the review's confirm, toggled to No
+			ENTER,
+		]);
+
+		// Answering No at the review cancels, which is what proves Tab reached it.
+		expect(result.status).toBe("cancelled");
+	});
+
+	test("the review steps back into the last question, not past it", async () => {
+		const { result } = await flowWith([...questions, { node: "summary" }], [
+			"a",
+			ENTER,
+			"b",
+			ENTER,
+			ESC, // at the review
+			"!",
+			ENTER, // "Two" again, offered back as `b`
+			ENTER, // apply
+		]);
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		expect(result.answers).toEqual({ one: "a", two: "b!" });
+	});
+
+	test("a task is a commit point — the answers behind it stop being reachable", async () => {
+		const ran: string[] = [];
+		const { result } = await flowWith(
+			[
+				questions[0],
+				{ node: "task", label: "Writing config", run: () => void ran.push("wrote") },
+				questions[1],
+			],
+			["a", ENTER, ESC, "b", ENTER],
+		);
+
+		expect(result.status).toBe("completed");
+		if (result.status !== "completed") return;
+		// Escape re-asked "Two" rather than winding back over the task, so the
+		// work was done exactly once and its answer stands.
+		expect(result.answers).toEqual({ one: "a", two: "b" });
+		expect(ran).toEqual(["wrote"]);
 	});
 });

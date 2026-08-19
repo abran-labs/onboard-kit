@@ -25,6 +25,11 @@ const result = await onboard({
 	state: false, // the demo always runs
 	interactive: "always",
 
+	// Escape steps back a question and Ctrl-C quits — both named in the footer
+	// under the prompt. Going back erases what came after it, so pick a
+	// provider, start typing the key, then hit Escape and watch it un-draw.
+	// Tab and Shift+Tab walk the options, next to the arrows and j/k.
+	//
 	// Cancel partway through and it saves your progress, then tells you how to
 	// pick it up. Your answers live in the runtime dir (RAM-backed, cleared on
 	// logout) and the API key is never among them.

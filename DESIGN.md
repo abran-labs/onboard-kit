@@ -214,6 +214,24 @@ type Result<A> =
   | { status: "failed";     error: unknown; atNode: string };
 ```
 
+### Navigation is part of the template, not the flow
+
+A wizard that only moves forward makes the user pay for a misgiving with the whole run. So Escape steps back a question and Ctrl-C quits, and the key footer says so — a keybinding nobody is told about does not exist.
+
+That footer is clack's, extended rather than replaced. Clack already draws one under its list prompts, already positions it, and already styles it; a second line of our own beside it would be two answers to one question. So the entries are appended to its list: `↑/↓ to navigate • Enter: confirm • Esc: back • Ctrl+C: quit`. Inside the frame, not above the flow — it describes what the thing you are looking at right now will do, and it leaves when that prompt does.
+
+The review is the one prompt that goes without it: by then the keys have been named under every question, and it asks for a decision rather than an answer, so a key list beneath it would compete with the table it is about. They all still work.
+
+Clack only draws that footer for its list prompts, and a footer that appeared and vanished with the kind of question being asked would read as the keys themselves appearing and vanishing. So the prompts it leaves bare get the same line drawn into their frame: after each of clack's writes the closing row is replaced with the footer and the row it displaced, and it is taken back down before the next write — clack renders against the screen it thinks it left behind and never has to know. The displaced row is captured rather than assumed, because a prompt closes on `└` right up until a validation fails, when the same row becomes `└  too short`. Where the closing row isn't there to displace, nothing is drawn: an unfamiliar frame goes without a footer rather than wrong.
+
+One line, everywhere: the same four entries on a list, a text field and a yes/no, whether or not each key does something on that prompt. A footer is chrome, not a status line — it is read once and then stopped being read, and an entry that comes and goes with the kind of question is read as the *keys* coming and going, which is a worse lie than an entry that is briefly inert. `multiChoice` is the sole exception, and only because it adds a key rather than dropping one. Tab and Shift+Tab walk the options too, beside the arrows and vim keys. Not as an alias in clack's table: it matches on the key's *name*, and Node reports Shift+Tab as `tab` with a shift flag, so an alias would send both directions down the list.
+
+The rule the implementation is built around: **going back un-draws.** Re-printing the earlier question below the wrong answer would turn the rail into a transcript of the user's indecision, and would leave the step counter claiming more questions than the flow has. Instead the terminal is rewound — every row drawn since that question is erased, the answers and counters are restored to what they were, and the run continues as though it had never been asked. What is on screen is always exactly what has been answered.
+
+That requires knowing where the cursor is, which no terminal reports. It is derived instead: the template's chrome and clack's prompt frames are written through one screen that counts rows, wraps and cursor moves as they pass. It also requires knowing *why* a prompt ended — clack reports Escape and Ctrl-C as the same cancel — so the keypress stream is watched alongside it.
+
+Three limits, all the same principle, that a step back must not claim to undo what it cannot: a `task` is a commit point and seals the questions behind it; secrets are retyped, never redisplayed; and Escape on the first question re-asks it rather than quitting, because a back key that drops you out of the flow is a trap.
+
 ### Two things the template handles silently
 
 **Already onboarded.** `id` + `version` are recorded in a small JSON file after a completed run. A returning user at the same version gets `status: "skipped"` with no output at all. Bump `version` and only nodes added since re-run. Answers are *never* persisted — only node ids and the version. Secrets can't leak because they were never stored.
@@ -256,6 +274,8 @@ A closed catalog means the first person who needs a date picker or a slider is s
 **v0.2 — the template.** `onboard()`, all 12 nodes, fixed visual language, the 4-field identity seam, `when`, non-TTY resolution, already-onboarded state, `Result`. Clack as peer dep.
 
 **v0.3 — proof.** `npx onboard-kit demo` running the §3 flow end to end. For a package selling "it looks good," a demo you can run in 10 seconds is worth more than the README. Should have existed before v0.1 shipped.
+
+**v0.3 — backwards navigation.** Escape steps back a question, the terminal rewinding rather than reprinting. Not a node and not configuration: it is how the template behaves, the same way spacing is.
 
 **v0.4 — considered additions.** Only nodes that showed up in real usage. No new configuration.
 

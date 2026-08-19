@@ -1,5 +1,7 @@
 import { dirname } from "node:path";
+import type { Writable } from "node:stream";
 import * as clack from "@clack/prompts";
+import { createScreen, cycleOnTab, keyFooter, keyLine, type Screen, watchBack } from "./nav.js";
 import {
 	currentTty,
 	defaultResumePath,
@@ -81,6 +83,18 @@ export interface OnboardConfig<A, Nodes extends readonly Node<A>[]> {
 	 * on resume. Off by default, since it does persist real answers.
 	 */
 	readonly resumable?: boolean;
+	/**
+	 * Let Escape step back to the previous question. Defaults to `true`.
+	 *
+	 * Going back rewinds the terminal: the questions after the one returned to
+	 * are erased and asked again, so what is on screen always matches what has
+	 * actually been answered. Answers already given are offered back as the
+	 * starting value — except secrets, which are always retyped.
+	 *
+	 * A `task` is a commit point. Once one has run it has changed something
+	 * outside the flow, so the steps before it stop being reachable.
+	 */
+	readonly back?: boolean;
 	/** Pick up a previously cancelled run instead of starting over. */
 	readonly resume?: boolean;
 	/** The command printed in the resume hint, e.g. `mytool setup --resume`. */
@@ -91,6 +105,8 @@ export interface OnboardConfig<A, Nodes extends readonly Node<A>[]> {
 	readonly env?: Record<string, string | undefined>;
 	/** Where template chrome is written. Defaults to `process.stdout`. */
 	readonly output?: Output;
+	/** Where keys are read from. Defaults to `process.stdin`. For tests. */
+	readonly input?: NodeJS.ReadStream;
 }
 
 export interface MissingInput {
@@ -180,6 +196,8 @@ function slug(name: string): string {
 }
 
 const CANCELLED = Symbol("cancelled");
+/** Escape, as distinct from Ctrl-C: undo the last question rather than quit. */
+const BACK = Symbol("back");
 
 export async function onboard<
 	A = Infer,
@@ -194,10 +212,15 @@ export async function onboard<
 	type Ret = Throw extends true ? OnboardSuccess<R> : OnboardResult<R>;
 
 	const { name, accent, logo, version = 1, nodes, interactive = "auto", env = process.env, output } = config;
+	const input = config.input ?? process.stdin;
 
 	const flowId = config.id ?? slug(name);
 	const theme = createTheme(accent);
 	const sink: Output = output ?? process.stdout;
+	// Every row the flow draws — the template's chrome and clack's prompt frames
+	// alike — is written through one screen. A rewind that could not account for
+	// the prompts would not be able to erase one.
+	const screen = createScreen(sink);
 	// Every block opens with a blank rail so they are evenly separated. The
 	// first one is different: with no banner above it there is no rail yet to
 	// continue, and the lone `│` reads as a stray mark. So track whether
@@ -206,7 +229,7 @@ export async function onboard<
 	const out: Output = {
 		write(chunk) {
 			drawn = true;
-			return sink.write(chunk);
+			return screen.write(chunk);
 		},
 	};
 	/** A blank rail between blocks — nothing at all before the first one. */
@@ -216,6 +239,9 @@ export async function onboard<
 
 	const isInteractive =
 		interactive === "always" ? true : interactive === "never" ? false : clack.isTTY(process.stdout) && !clack.isCI();
+	// Stepping back means erasing what is on screen, which only a terminal can
+	// do — a piped or CI run has nowhere to rewind to.
+	const canGoBack = isInteractive && (config.back ?? true);
 
 	const store: StateStore = config.state === false ? noState() : (config.state ?? fileState(defaultStatePath(flowId)));
 	const resumeStore: ResumeStore = config.resumeStore ?? fileResume(defaultResumePath(flowId));
@@ -309,14 +335,24 @@ export async function onboard<
 	let discarded = false;
 	// Answers restored from a cancelled run. Secrets are never among them, so
 	// those questions are asked again below.
-	let restored: readonly string[] = [];
+	const restored = new Set<string>();
 	if (config.resume) {
 		const saved = await resumeStore.read();
 		if (saved && saved.flowId === flowId && saved.version === version) {
 			Object.assign(answers, saved.answers);
-			restored = Object.keys(saved.answers);
+			for (const id of Object.keys(saved.answers)) restored.add(id);
 		}
 	}
+	/**
+	 * Every answer the user has ever given this run, including the ones a step
+	 * back has since undone.
+	 *
+	 * `answers` is rewound with the screen, so on its own a question returned to
+	 * would come up blank — which reads as the flow having thrown the answer
+	 * away rather than offered it back for editing. This is never rewound, and
+	 * is only ever used to seed a re-asked prompt.
+	 */
+	const previous: Answers = { ...answers };
 
 	const failedChecks: string[] = [];
 	const missing: MissingInput[] = [];
@@ -330,6 +366,52 @@ export async function onboard<
 	// Counts every question this run covers, replayed or asked, so a resumed
 	// flow numbers its steps exactly as the original did.
 	let questionNo = 0;
+
+	/**
+	 * A question, and everything the flow knew just before it was asked.
+	 *
+	 * Going back rewinds screen and state together: `row` is where the terminal
+	 * is erased to, and the rest puts the answers and counters back the way they
+	 * were — so the run continues as though the question had never been put.
+	 */
+	interface Checkpoint {
+		readonly index: number;
+		readonly row: number;
+		readonly questionNo: number;
+		readonly answers: Answers;
+		readonly asked: readonly string[];
+	}
+	const history: Checkpoint[] = [];
+
+	/**
+	 * Returns to the last question that can still be changed, or re-asks the
+	 * current one when it is the first. Escape is the back key, and a back key
+	 * that quits the flow the moment there is nowhere left to go is a trap —
+	 * Ctrl-C is how you leave.
+	 *
+	 * `fromQuestion` says where the step back was taken. A question's own
+	 * checkpoint is the one on top of the stack, and that question is where we
+	 * already are, so the destination is the one beneath it. The review has no
+	 * checkpoint of its own and so lands on the top one — the last thing asked.
+	 *
+	 * Returns the node index the loop should resume from.
+	 */
+	function stepBack(fallback: number, fromQuestion: boolean): number {
+		const current = fromQuestion ? history.pop() : undefined;
+		const target = history.pop() ?? current;
+		if (!target) return fallback;
+		screen.rewind(target.row);
+		questionNo = target.questionNo;
+		for (const key of Object.keys(answers)) delete answers[key];
+		Object.assign(answers, target.answers);
+		asked.length = 0;
+		asked.push(...target.asked);
+		// A resumed answer being returned to is one the user wants to change, so
+		// it stops being a settled value to replay and becomes a question again.
+		const node = list[target.index];
+		if (node && "id" in node) restored.delete(node.id);
+		return target.index;
+	}
 
 	// Denominator for `[n/m]`, recomputed as answers arrive so that `when`
 	// exclusions do not inflate it.
@@ -380,7 +462,7 @@ export async function onboard<
 
 				case "note": {
 					if (!isInteractive) break;
-					clack.note(node.body, node.title);
+					clack.note(node.body, node.title, { output: screen.stream });
 					break;
 				}
 
@@ -411,12 +493,26 @@ export async function onboard<
 				}
 
 				case "task": {
-					await runTask(node as TaskNode<unknown>, answers, isInteractive, out);
+					await runTask(node as TaskNode<unknown>, answers, isInteractive, out, screen);
+					// A task changes something outside the flow. The answers behind
+					// it have been acted on and can no longer be taken back, so the
+					// steps that produced them stop being reachable.
+					history.length = 0;
 					break;
 				}
 
 				case "summary": {
-					const proceed = await runSummary(node as SummaryNode<unknown>, list, answers, theme, out, isInteractive);
+					const proceed = await runSummary(node as SummaryNode<unknown>, list, answers, theme, out, isInteractive, {
+						screen,
+						input,
+						// The review is where a wrong answer is most often spotted, so
+						// it steps back into the questions rather than only forwards.
+						back: canGoBack && history.length > 0,
+					});
+					if (proceed === BACK) {
+						i = stepBack(i, false) - 1;
+						continue;
+					}
 					if (proceed === CANCELLED) {
 						return await finish({ status: "cancelled", partial: answers as Partial<R>, atNode: "summary" });
 					}
@@ -425,9 +521,18 @@ export async function onboard<
 
 				default: {
 					if (previouslyAnswered.has(node.id)) break;
-					questionNo += 1;
 					await discardStaleProgress();
-					if (restored.includes(node.id)) {
+					// Recorded before a single row is drawn for this question, so
+					// returning to it lands on a screen that has never seen it.
+					history.push({
+						index: i,
+						row: screen.row,
+						questionNo,
+						answers: { ...answers },
+						asked: [...asked],
+					});
+					questionNo += 1;
+					if (restored.has(node.id)) {
 						// Redraw it as an answered prompt, counter and all. Skipping
 						// silently made a resumed run look like it had lost the
 						// earlier answers, and dropping the counter made the
@@ -445,20 +550,29 @@ export async function onboard<
 
 					const value = await resolveQuestion(node, {
 						out,
+						screen,
+						input,
 						isInteractive,
+						back: canGoBack,
 						product: name,
 						env,
 						index: questionNo,
 						total: totalQuestions(),
 						missing,
+						...(node.id in previous ? { initial: previous[node.id] } : {}),
 					});
 
+					if (value === BACK) {
+						i = stepBack(i, true) - 1;
+						continue;
+					}
 					if (value === CANCELLED) {
 						return await finish({ status: "cancelled", partial: answers as Partial<R>, atNode: node.id });
 					}
 					if (value === undefined) break; // unresolvable; recorded in `missing`
 
 					answers[node.id] = value;
+					previous[node.id] = value;
 					asked.push(node.id);
 				}
 			}
@@ -537,13 +651,19 @@ async function runChecks(
 	return halt;
 }
 
-async function runTask(node: TaskNode<unknown>, answers: Answers, isInteractive: boolean, out: Output): Promise<void> {
+async function runTask(
+	node: TaskNode<unknown>,
+	answers: Answers,
+	isInteractive: boolean,
+	out: Output,
+	screen: Screen,
+): Promise<void> {
 	if (!isInteractive) {
 		await node.run(answers);
 		out.write(`${node.label}: done\n`);
 		return;
 	}
-	const spin = clack.spinner();
+	const spin = clack.spinner({ output: screen.stream });
 	spin.start(node.label);
 	try {
 		await node.run(answers);
@@ -561,7 +681,8 @@ async function runSummary(
 	theme: Theme,
 	out: Output,
 	isInteractive: boolean,
-): Promise<true | typeof CANCELLED> {
+	nav: { readonly screen: Screen; readonly input: NodeJS.ReadStream; readonly back: boolean },
+): Promise<true | typeof CANCELLED | typeof BACK> {
 	const rows: (readonly [string, string])[] = [];
 	for (const n of nodes) {
 		if (!isQuestion(n)) continue;
@@ -584,9 +705,22 @@ async function runSummary(
 
 	if (node.confirm === false) return true;
 
-	const ok = await clack.confirm({ message: "Apply these changes?" });
+	// No key footer here, though the keys all still work. By the review the
+	// reader has met them under every question, and this is the one prompt that
+	// asks for a decision rather than an answer — a list of keys under it would
+	// compete with the table it is about.
+	const watch = nav.back ? watchBack(nav.input) : undefined;
+	const untab = cycleOnTab(nav.input);
+	let ok: boolean | symbol;
+	try {
+		ok = await clack.confirm({ message: "Apply these changes?", input: nav.input, output: nav.screen.stream });
+	} finally {
+		watch?.stop();
+		untab();
+	}
+	if (clack.isCancel(ok) && watch?.pressed) return BACK;
 	if (clack.isCancel(ok) || ok === false) {
-		clack.cancel("Cancelled — nothing was changed.");
+		clack.cancel("Cancelled — nothing was changed.", { output: nav.screen.stream });
 		return CANCELLED;
 	}
 	return true;
@@ -594,7 +728,13 @@ async function runSummary(
 
 interface QuestionCtx {
 	readonly out: Output;
+	readonly screen: Screen;
+	readonly input: NodeJS.ReadStream;
 	readonly isInteractive: boolean;
+	/** Whether Escape should undo this question rather than end the run. */
+	readonly back: boolean;
+	/** The answer given last time this question was put, if it has been. */
+	readonly initial?: unknown;
 	readonly product: string;
 	readonly env: Record<string, string | undefined>;
 	readonly index: number;
@@ -602,7 +742,10 @@ interface QuestionCtx {
 	readonly missing: MissingInput[];
 }
 
-async function resolveQuestion(node: QuestionNode, ctx: QuestionCtx): Promise<unknown | typeof CANCELLED> {
+async function resolveQuestion(
+	node: QuestionNode,
+	ctx: QuestionCtx,
+): Promise<unknown | typeof CANCELLED | typeof BACK> {
 	const envName = envNameFor(ctx.product, node.id);
 	const fromEnv = ctx.env[envName];
 
@@ -615,12 +758,42 @@ async function resolveQuestion(node: QuestionNode, ctx: QuestionCtx): Promise<un
 		return undefined;
 	}
 
-	const value = await promptFor(node, numbered(ctx.index, ctx.total, node.label));
+	// Watch the keys alongside clack: it closes on Escape and Ctrl-C alike and
+	// reports both as one cancel, and which of the two it was is the whole
+	// difference between stepping back and giving up.
+	const watch = ctx.back ? watchBack(ctx.input) : undefined;
+	// Tab walks the options, next to the arrows and their vim equivalents. Not
+	// on a text field: Tab is clack's own there, and there is nothing to step
+	// through anyway.
+	const untab = walkable(node) ? cycleOnTab(ctx.input) : undefined;
+	let value: unknown;
+	try {
+		value = await promptFor(node, numbered(ctx.index, ctx.total, node.label), ctx, ctx.initial);
+	} finally {
+		watch?.stop();
+		untab?.();
+		ctx.screen.overlay(undefined);
+	}
 	if (clack.isCancel(value)) {
-		clack.cancel("Cancelled.");
+		if (watch?.pressed) return BACK;
+		clack.cancel("Cancelled.", { output: ctx.screen.stream });
 		return CANCELLED;
 	}
 	return value;
+}
+
+/**
+ * Whether the question is put as a set of options to step through.
+ *
+ * A confirm counts: clack moves it on any cursor key, so Tab reaches it the
+ * same way the arrows do.
+ */
+function walkable(node: QuestionNode): boolean {
+	return (
+		node.node === "multiChoice" ||
+		node.node === "confirm" ||
+		(node.node === "choice" && node.options.length <= AUTOCOMPLETE_THRESHOLD)
+	);
 }
 
 /** `[2/3]  API key` — omitted when there is only one question to ask. */
@@ -628,39 +801,77 @@ export function numbered(index: number, total: number, label: string): string {
 	return total > 1 ? `${dim(`[${index}/${total}]`)}  ${label}` : label;
 }
 
-async function promptFor(node: QuestionNode, message: string): Promise<unknown> {
+/**
+ * Puts one question to the user.
+ *
+ * `initial` is the answer given the last time this question was asked, which
+ * is only ever set when the user has stepped back to it. Coming back to a
+ * blank field reads as the flow having discarded the answer, so it is offered
+ * back for editing instead — except for a secret, which is never redisplayed
+ * and so is always retyped.
+ *
+ * Every prompt carries the key footer, under the question the keys act on:
+ * clack's own with our entries appended where it draws one, and ours drawn
+ * into the frame where it does not. The keys do not change from question to
+ * question, so neither should the line that names them.
+ */
+async function promptFor(node: QuestionNode, message: string, ctx: QuestionCtx, initial?: unknown): Promise<unknown> {
+	const str = typeof initial === "string" ? initial : undefined;
+	// Every prompt is bound to the same streams the rest of the flow uses, so
+	// the row count stays whole and a test can drive one without a terminal.
+	const io = { input: ctx.input, output: ctx.screen.stream as Writable };
 	switch (node.node) {
 		case "choice": {
 			const options = toClackOptions(node.options);
-			return node.options.length > AUTOCOMPLETE_THRESHOLD
-				? clack.autocomplete({ message, options })
-				: clack.select({ message, options, ...(node.default !== undefined ? { initialValue: node.default } : {}) });
+			const start = str ?? node.default;
+			if (node.options.length > AUTOCOMPLETE_THRESHOLD) return clack.autocomplete({ message, options, ...io });
+			keyFooter("select", ctx.back);
+			return clack.select({
+				message,
+				options,
+				...io,
+				...(start !== undefined ? { initialValue: start } : {}),
+			});
 		}
-		case "multiChoice":
+		case "multiChoice": {
+			const start = Array.isArray(initial) ? (initial as string[]) : node.default;
+			keyFooter("multiselect", ctx.back);
 			return clack.multiselect({
 				message,
 				options: toClackOptions(node.options),
-				...(node.default !== undefined ? { initialValues: [...node.default] } : {}),
+				...io,
+				...(start !== undefined ? { initialValues: [...start] } : {}),
 				required: node.required ?? false,
 			});
-		case "confirm":
-			return clack.confirm({ message, ...(node.default !== undefined ? { initialValue: node.default } : {}) });
+		}
+		case "confirm": {
+			const start = typeof initial === "boolean" ? initial : node.default;
+			ctx.screen.overlay(keyLine(ctx.back));
+			return clack.confirm({ message, ...io, ...(start !== undefined ? { initialValue: start } : {}) });
+		}
 		case "text":
+			ctx.screen.overlay(keyLine(ctx.back));
 			return clack.text({
 				message,
+				...io,
 				...(node.placeholder !== undefined ? { placeholder: node.placeholder } : {}),
 				...(node.default !== undefined ? { defaultValue: node.default } : {}),
+				...(str !== undefined ? { initialValue: str } : {}),
 				...(node.validate ? { validate: wrapValidate(node.validate) } : {}),
 			});
 		case "secret":
+			ctx.screen.overlay(keyLine(ctx.back));
 			return clack.password({
 				message,
+				...io,
 				...(node.validate ? { validate: wrapValidate(node.validate) } : {}),
 			});
 		case "pick":
 			return clack.path({
 				message,
+				...io,
 				...(node.root !== undefined ? { root: node.root } : {}),
+				...(str !== undefined ? { initialValue: str } : {}),
 				directory: node.select === "directory",
 			});
 	}
