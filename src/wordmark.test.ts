@@ -15,7 +15,7 @@ describe("wordmark", () => {
 	});
 
 	test("draws with block characters and nothing else", () => {
-		const glyphChars = new Set(wordmark("Onboard Kit 42").join("").split(""));
+		const glyphChars = new Set(wordmark("Onboard Kit 42", { maxWidth: 200 }).join("").split(""));
 		expect([...glyphChars].sort()).toEqual([" ", "█"]);
 	});
 
@@ -36,7 +36,27 @@ describe("wordmark", () => {
 	});
 
 	test("accepts a custom ink character", () => {
-		expect(wordmark("I", "*").join("")).not.toContain("█");
-		expect(wordmark("I", "*").join("")).toContain("*");
+		expect(wordmark("I", { ink: "*" }).join("")).not.toContain("█");
+		expect(wordmark("I", { ink: "*" }).join("")).toContain("*");
+	});
+
+	test("draws two cells per pixel, since a terminal cell is twice as tall as wide", () => {
+		const wide = wordmark("I", { scale: 2 });
+		const narrow = wordmark("I", { scale: 1 });
+		expect(wide[0]?.length).toBe((narrow[0]?.length ?? 0) * 2);
+	});
+
+	test("auto scale falls back to one cell when two would not fit", () => {
+		const roomy = wordmark("MyTool", { maxWidth: 200 });
+		const snug = wordmark("MyTool", { maxWidth: 40 });
+		expect(roomy[0]!.length).toBeGreaterThan(snug[0]!.length);
+		for (const line of snug) expect(line.length).toBeLessThanOrEqual(40);
+	});
+
+	test("draws nothing when even one cell per pixel would wrap", () => {
+		// Wrapped letterforms look broken; the caller falls back to a plain
+		// header rule instead.
+		expect(wordmark("MyTool", { maxWidth: 20 })).toEqual([]);
+		expect(wordmark("A very long product name here", { maxWidth: 60 })).toEqual([]);
 	});
 });

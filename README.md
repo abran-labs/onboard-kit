@@ -215,7 +215,17 @@ Set `logo: true` and your product name renders in the template's block font, rep
 │
 ```
 
-Pass a string instead to supply your own ASCII art. Unsupported characters degrade to blanks rather than throwing — a logo is decoration and must never fail a setup flow.
+It scales itself to the terminal: two cells per pixel when there's room (a terminal cell is about twice as tall as it is wide, so one cell per pixel renders everything at double height and reads as tall and skinny), one cell when there isn't, and nothing at all below that — a wrapped logo looks broken, so a narrow terminal just gets the plain header rule.
+
+Pass a **string** instead to supply your own art, which is also how you use another font entirely:
+
+```ts
+import figlet from "figlet";
+
+await onboard({ name: "MyTool", logo: figlet.textSync("MyTool", "Block"), nodes: [...] });
+```
+
+onboard-kit doesn't depend on figlet — it just takes the string. Unsupported characters in the built-in font degrade to blanks rather than throwing, since a logo is decoration and must never fail a setup flow.
 
 ## Resume after a cancel
 
