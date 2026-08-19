@@ -339,7 +339,6 @@ export async function onboard<
 						out.write(`${theme.header(node.title ?? name)}\n`);
 					}
 					if (node.subtitle) out.write(`${theme.rail()}\n${theme.rail(node.subtitle)}\n`);
-					out.write(`${theme.rail()}\n`);
 					break;
 				}
 
@@ -398,9 +397,12 @@ export async function onboard<
 						// earlier answers, and dropping the counter made the
 						// remaining steps look misnumbered.
 						if (isInteractive) {
+							// Clack opens every prompt with a blank rail and closes with
+							// the value — no trailing blank. Matching that exactly is
+							// what keeps a replayed question spaced like a real one.
+							out.write(`${theme.rail()}\n`);
 							out.write(`${theme.step(numbered(questionNo, totalQuestions(), node.label))}\n`);
 							out.write(`${theme.rail(dim(displayValue(node, answers[node.id])))}\n`);
-							out.write(`${theme.rail()}\n`);
 						}
 						break;
 					}
@@ -461,7 +463,12 @@ async function runChecks(
 	isInteractive: boolean,
 	failed: string[],
 ): Promise<boolean> {
-	if (isInteractive) out.write(`${theme.step("Checking your environment")}\n`);
+	// Leading blank rail, no trailing one — the same shape clack gives a prompt,
+	// so every block in the flow is separated by exactly one rail line.
+	if (isInteractive) {
+		out.write(`${theme.rail()}\n`);
+		out.write(`${theme.step("Checking your environment")}\n`);
+	}
 
 	let halt = false;
 	for (const node of group) {
@@ -490,7 +497,6 @@ async function runChecks(
 		}
 		halt = true;
 	}
-	if (isInteractive) out.write(`${theme.rail()}\n`);
 	return halt;
 }
 
@@ -534,10 +540,10 @@ async function runSummary(
 		return true;
 	}
 
+	out.write(`${theme.rail()}\n`);
 	out.write(`${theme.divider(node.title ?? "Review")}\n`);
 	out.write(`${theme.rail()}\n`);
 	out.write(`${theme.rows(rows)}\n`);
-	out.write(`${theme.rail()}\n`);
 
 	if (node.confirm === false) return true;
 
