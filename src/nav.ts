@@ -239,8 +239,16 @@ export function createScreen(sink: Output): Screen {
 			stream.on?.(event as "resize", listener);
 			return this;
 		},
+		addListener(event: string, listener: () => void) {
+			stream.addListener?.(event as "resize", listener);
+			return this;
+		},
 		off(event: string, listener: () => void) {
 			stream.off?.(event as "resize", listener);
+			return this;
+		},
+		removeListener(event: string, listener: () => void) {
+			stream.removeListener?.(event as "resize", listener);
 			return this;
 		},
 		get stream(): Writable {

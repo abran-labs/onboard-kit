@@ -19,6 +19,20 @@ function sink(columns = 20): Output & { text: string; columns: number } {
 }
 
 describe("screen row tracking", () => {
+	test("exposes both EventEmitter listener aliases used by clack", () => {
+		const output = new PassThrough();
+		const screen = createScreen(output);
+		const listener = () => {};
+
+		expect(() => {
+			screen.stream.on("resize", listener);
+			screen.stream.off("resize", listener);
+			screen.stream.addListener("resize", listener);
+			screen.stream.removeListener("resize", listener);
+		}).not.toThrow();
+		expect(output.listenerCount("resize")).toBe(0);
+	});
+
 	test("counts newlines", () => {
 		const screen = createScreen(sink());
 		screen.write("one\ntwo\n");
