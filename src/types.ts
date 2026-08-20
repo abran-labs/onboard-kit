@@ -27,6 +27,7 @@ export interface NodeOption<V extends string = string> {
 	readonly value: V;
 	readonly label?: string;
 	readonly hint?: string;
+	readonly recommended?: boolean;
 }
 
 export interface NextEntry {

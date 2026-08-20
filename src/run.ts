@@ -884,10 +884,10 @@ async function promptFor(node: QuestionNode, message: string, ctx: QuestionCtx, 
 	}
 }
 
-function toClackOptions(options: readonly { value: string; label?: string; hint?: string }[]) {
+function toClackOptions(options: readonly { value: string; label?: string; hint?: string; recommended?: boolean }[]) {
 	return options.map((o) => ({
 		value: o.value,
-		...(o.label !== undefined ? { label: o.label } : {}),
+		...(o.recommended ? { label: `${o.label ?? o.value} (recommended)` } : o.label !== undefined ? { label: o.label } : {}),
 		...(o.hint !== undefined ? { hint: o.hint } : {}),
 	}));
 }

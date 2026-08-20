@@ -1010,6 +1010,20 @@ describe("stepping back", () => {
 });
 
 describe("moving between options", () => {
+	test("a recommended option gets a marker without changing its value", async () => {
+		const { result, snaps } = await flow([ENTER], {
+			nodes: [{
+				node: "choice",
+				id: "mode",
+				label: "Mode",
+				options: [{ value: "review", recommended: true }, { value: "ask", label: "always ask" }],
+			}],
+		});
+
+		expect(snaps[0]).toContain("review (recommended)");
+		expect(result.status === "completed" && result.answers.mode).toBe("review");
+	});
+
 	test("Tab steps down the list and Shift+Tab steps back up", async () => {
 		// Down to Anthropic, down to nothing further, then back up.
 		const { result } = await flow([TAB, TAB, SHIFT_TAB, ENTER, "k", ENTER, ENTER]);
