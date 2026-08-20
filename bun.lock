@@ -5,12 +5,12 @@
     "": {
       "name": "onboard-kit",
       "devDependencies": {
-        "@clack/prompts": "^1.5.1",
+        "@clack/prompts": "^1.7.0",
         "@types/bun": "latest",
         "typescript": "^5.9.3",
       },
       "peerDependencies": {
-        "@clack/prompts": "^1.5.0",
+        "@clack/prompts": "^1.7.0",
       },
     },
   },

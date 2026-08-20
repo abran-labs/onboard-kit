@@ -68,6 +68,10 @@ Every colour is an ANSI slot, never fixed RGB, so output is drawn from *the read
 ## Install
 
 ```bash
+npm install onboard-kit @clack/prompts
+```
+
+```bash
 bun add onboard-kit @clack/prompts
 ```
 

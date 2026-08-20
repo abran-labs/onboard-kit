@@ -283,16 +283,17 @@ A closed catalog means the first person who needs a date picker or a slider is s
 
 ---
 
-## 9. Repo work (unchanged from rev 1, still pending)
+## 9. Repo work
 
-Not design decisions — a publishable package needs these and this one lacks them:
+Done: `git init`, LICENSE, the `repository`/`homepage`/`bugs`/`author` fields, tests under the typechecker, and the Bun migration (`bun test`, `tsc --emitDeclarationOnly` for types, `bun.lock`; Bun as toolchain, Node-compatible output, `engines: { node: ">=20" }`).
 
-- **`git init`** — there is no version control on this project at all
-- **LICENSE file** — `package.json` claims MIT, no license text ships
-- `repository` / `homepage` / `bugs` / `author` — npm page renders bare
-- Typecheck the tests — `tsconfig.json` excludes `src/**/*.test.ts`
-- Scrub VoxType strings from `README.md` and `plan.test.ts` before any publish
-- **Bun migration** — `bun test`, `tsc --emitDeclarationOnly` for types, `bun.lock`. Bun as toolchain; Node-compatible output; `engines: { node: ">=20" }`
+Left before the first publish:
+
+- **A GitHub repo, pushed** — `package.json` advertises `abran-labs/onboard-kit` for homepage, repo and bugs, and every one of those links 404s until it exists
+- **An npm account logged in** — the unscoped name `onboard-kit` is unclaimed, so §10's preference is available
+- CI running `check` and `test` on push, which matters more than usual: the navigation tests drive real keypresses through timing windows
+
+Two things to keep true as clack moves: the peer range is `^1.7.0` because `formatInstructionFooter` and the instruction arrays do not exist before 1.6.0 and 1.7 is what we test against; and `src` ships alongside `dist` so the declaration maps resolve, which is what makes the comments in this repo reachable from a consumer's editor.
 
 ---
 

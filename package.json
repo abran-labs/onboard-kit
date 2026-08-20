@@ -1,7 +1,7 @@
 {
   "name": "onboard-kit",
-  "version": "0.2.0",
-  "description": "Drop-in onboarding flows for CLI tools. Pick your nodes, choose the order \u2014 the look is handled.",
+  "version": "0.3.0",
+  "description": "Drop-in onboarding flows for CLI tools. Pick your nodes, choose the order — the look is handled.",
   "type": "module",
   "license": "MIT",
   "author": "Abran Labs <abran.labs@gmail.com>",
@@ -28,6 +28,8 @@
   },
   "files": [
     "dist",
+    "src",
+    "!src/**/*.test.ts",
     "bin",
     "README.md",
     "LICENSE"
@@ -42,10 +44,10 @@
     "build:emit": "tsc -p tsconfig.build.json"
   },
   "peerDependencies": {
-    "@clack/prompts": "^1.5.0"
+    "@clack/prompts": "^1.7.0"
   },
   "devDependencies": {
-    "@clack/prompts": "^1.5.1",
+    "@clack/prompts": "^1.7.0",
     "@types/bun": "latest",
     "typescript": "^5.9.3"
   },
