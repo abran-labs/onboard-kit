@@ -48,7 +48,7 @@ describe("colour policy", () => {
 		expect(codes(theme.status("fail", "Node too old"))).toContain(RED);
 	});
 
-	test("chrome carries no hue — the title and Next use weight instead", () => {
+	test("chrome carries no hue — the title and commands use weight instead", () => {
 		const chrome = [
 			theme.header("MyTool"),
 			theme.rows([["Provider", "OpenAI"]]),
@@ -61,7 +61,7 @@ describe("colour policy", () => {
 		expect(codes(chrome)).toContain(DIM);
 	});
 
-	test("an accent colours exactly two things: the title and the Next commands", () => {
+	test("an accent colours exactly two things: the title and trailing commands", () => {
 		const accented = createTheme("magenta");
 		const MAGENTA = "35";
 
@@ -73,6 +73,12 @@ describe("colour policy", () => {
 		expect(codes(accented.status("pass", "ok"))).not.toContain(MAGENTA);
 		expect(codes(accented.rail("value"))).not.toContain(MAGENTA);
 		expect(codes(accented.footer("Done"))).not.toContain(MAGENTA);
+	});
+
+	test("the trailing command list has no heading", () => {
+		const rendered = createTheme().next([["mytool start", "launch"]]);
+		expect(rendered).not.toContain("Next");
+		expect(rendered).toContain("mytool start");
 	});
 });
 

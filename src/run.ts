@@ -52,7 +52,7 @@ export interface OnboardConfig<A, Nodes extends readonly Node<A>[]> {
 	/** Product name. Appears in the banner and seeds env var names. */
 	readonly name: string;
 	/**
-	 * Opt-in brand colour for the title and `Next` commands. Omit for entirely
+	 * Opt-in brand colour for the title and trailing commands. Omit for entirely
 	 * monochrome chrome, which is the default and adapts to any terminal theme.
 	 */
 	readonly accent?: Accent;

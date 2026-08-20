@@ -121,8 +121,8 @@ export interface Theme {
 	status(kind: "pass" | "warn" | "fail", text: string): string;
 	/** Aligned `key   value` rows for the review table. */
 	rows(entries: readonly (readonly [string, string])[]): string;
-	/** A trailing block that sits *below* the closed rail, e.g. `Next`. */
-	next(entries: readonly (readonly [string, string])[], title?: string): string;
+	/** A command list below the closed rail. */
+	next(entries: readonly (readonly [string, string])[]): string;
 	/**
 	 * A compact label/value block below the closed rail, for the one or two
 	 * facts a reader needs after the flow ends — how to resume, say.
@@ -137,7 +137,7 @@ export interface Theme {
  *
  * Anything reporting the state of something gets colour — a completed step and
  * a passing check are green, a warning yellow, a failure red. Anything that is
- * merely framing gets none: the rail is grey, and the title and `Next`
+ * merely framing gets none: the rail is grey, and the title and trailing
  * commands are bold rather than tinted, so brand styling never competes with
  * the status marks for the eye.
  *
@@ -145,7 +145,7 @@ export interface Theme {
  * the reader's own terminal palette and cannot clash with their background.
  *
  * `accent` is opt-in. Left undefined the chrome is entirely monochrome; set
- * it and exactly two places take colour — the title and the `Next` commands.
+ * it and exactly two places take colour — the title and trailing commands.
  */
 export function createTheme(accent?: Accent): Theme {
 	const paint = accent ? color(ACCENT_CODES[accent]) : (text: string) => text;
@@ -193,11 +193,10 @@ export function createTheme(accent?: Accent): Theme {
 				.map(([label, value]) => `   ${bold(label.padEnd(width))}   ${value}`)
 				.join("\n");
 		},
-		next: (entries, title = "Next") => {
+		next: (entries) => {
 			const width = entries.reduce((max, [cmd]) => Math.max(max, cmd.length), 0);
 			// Bold carries these when no accent is set, so they still stand out.
-			const lines = entries.map(([cmd, desc]) => `      ${bold(paint(cmd.padEnd(width)))}   ${dim(desc)}`);
-			return [`    ${bold(title)}`, ...lines].join("\n");
+			return entries.map(([cmd, desc]) => `   ${bold(paint(cmd.padEnd(width)))}   ${dim(desc)}`).join("\n");
 		},
 	};
 }
