@@ -7,17 +7,12 @@
 ## Install
 
 ```sh
-bun add @abran-labs/onboard-kit @clack/prompts
+bun add @abran-labs/onboard-kit
 ```
 
 ```sh
-npm install @abran-labs/onboard-kit @clack/prompts
+npm install @abran-labs/onboard-kit
 ```
-
-## Dependencies
-
-- [`@clack/prompts`](https://github.com/bombshell-dev/clack)
-- Node 20+ or Bun
 
 ## What it looks like
 
