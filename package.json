@@ -1,9 +1,12 @@
 {
-  "name": "onboard-kit",
+  "name": "@abran-labs/onboard-kit",
   "version": "0.3.0",
   "description": "Drop-in onboarding flows for CLI tools. Pick your nodes, choose the order — the look is handled.",
   "type": "module",
   "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
   "author": "Abran Labs <abran.labs@gmail.com>",
   "homepage": "https://github.com/abran-labs/onboard-kit#readme",
   "repository": {

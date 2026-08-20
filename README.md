@@ -7,11 +7,11 @@
 ## Install
 
 ```sh
-bun add onboard-kit @clack/prompts
+bun add @abran-labs/onboard-kit @clack/prompts
 ```
 
 ```sh
-npm install onboard-kit @clack/prompts
+npm install @abran-labs/onboard-kit @clack/prompts
 ```
 
 ## Dependencies
@@ -22,7 +22,7 @@ npm install onboard-kit @clack/prompts
 ## What it looks like
 
 ```sh
-npx onboard-kit demo
+npx @abran-labs/onboard-kit demo
 ```
 
 ```
