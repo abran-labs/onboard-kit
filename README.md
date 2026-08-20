@@ -2,6 +2,10 @@
 
 # Onboard Kit
 
+[![npm](https://img.shields.io/npm/v/@abran-labs/onboard-kit)](https://www.npmjs.com/package/@abran-labs/onboard-kit)
+![downloads](https://img.shields.io/npm/dm/@abran-labs/onboard-kit)
+![license](https://img.shields.io/npm/l/@abran-labs/onboard-kit)
+
 **A simple node base onboarding flow for CLI tools.**
 
 ## Install
