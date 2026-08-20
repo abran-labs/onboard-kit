@@ -217,7 +217,7 @@ describe("task", () => {
 		expect(result.status).toBe("completed");
 		expect(out.text).toContain("Installing dependencies");
 		expect(out.text).toContain("package manager output");
-		expect(out.text).toContain("complete");
+		expect(out.text).not.toContain("complete");
 	});
 
 	test("receives the collected answers", async () => {

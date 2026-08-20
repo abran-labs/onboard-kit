@@ -1,6 +1,6 @@
 {
   "name": "@abran-labs/onboard-kit",
-  "version": "0.3.4",
+  "version": "0.3.5",
   "description": "Drop-in onboarding flows for CLI tools. Pick your nodes, choose the order — the look is handled.",
   "type": "module",
   "license": "MIT",

@@ -667,14 +667,7 @@ async function runTask(
 	if (node.output === "inherit") {
 		out.write(`${theme.rail()}\n`);
 		out.write(`${theme.step(node.label)}\n`);
-		out.write(`${theme.rail()}\n`);
-		try {
-			await node.run(answers);
-			out.write(`${theme.status("pass", "complete")}\n`);
-		} catch (error) {
-			out.write(`${theme.status("fail", "failed")}\n`);
-			throw error;
-		}
+		await node.run(answers);
 		return;
 	}
 	const spin = clack.spinner({ output: screen.stream });
