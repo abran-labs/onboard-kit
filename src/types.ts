@@ -147,8 +147,6 @@ export interface TaskNode<A> {
 	 * subprocess output and prompts remain visible.
 	 */
 	readonly output?: "spinner" | "inherit";
-	/** Tell the reader that this task may request administrator access. */
-	readonly elevated?: boolean;
 	readonly when?: (answers: A) => boolean;
 }
 

@@ -667,7 +667,6 @@ async function runTask(
 	if (node.output === "inherit") {
 		out.write(`${theme.rail()}\n`);
 		out.write(`${theme.step(node.label)}\n`);
-		if (node.elevated) out.write(`${theme.rail(dim("Administrator access may be requested in this terminal."))}\n`);
 		out.write(`${theme.rail()}\n`);
 		try {
 			await node.run(answers);
