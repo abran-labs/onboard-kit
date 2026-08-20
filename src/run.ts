@@ -493,7 +493,7 @@ export async function onboard<
 				}
 
 				case "task": {
-					await runTask(node as TaskNode<unknown>, answers, isInteractive, out, screen);
+					await runTask(node as TaskNode<unknown>, answers, isInteractive, theme, out, screen);
 					// A task changes something outside the flow. The answers behind
 					// it have been acted on and can no longer be taken back, so the
 					// steps that produced them stop being reachable.
@@ -655,12 +655,27 @@ async function runTask(
 	node: TaskNode<unknown>,
 	answers: Answers,
 	isInteractive: boolean,
+	theme: Theme,
 	out: Output,
 	screen: Screen,
 ): Promise<void> {
 	if (!isInteractive) {
 		await node.run(answers);
 		out.write(`${node.label}: done\n`);
+		return;
+	}
+	if (node.output === "inherit") {
+		out.write(`${theme.rail()}\n`);
+		out.write(`${theme.step(node.label)}\n`);
+		if (node.elevated) out.write(`${theme.rail(dim("Administrator access may be requested in this terminal."))}\n`);
+		out.write(`${theme.rail()}\n`);
+		try {
+			await node.run(answers);
+			out.write(`${theme.status("pass", "complete")}\n`);
+		} catch (error) {
+			out.write(`${theme.status("fail", "failed")}\n`);
+			throw error;
+		}
 		return;
 	}
 	const spin = clack.spinner({ output: screen.stream });

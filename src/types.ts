@@ -142,6 +142,13 @@ export interface TaskNode<A> {
 	readonly node: "task";
 	readonly label: string;
 	readonly run: (answers: A) => unknown | Promise<unknown>;
+	/**
+	 * `spinner` is for quiet work. `inherit` yields the terminal to the task so
+	 * subprocess output and prompts remain visible.
+	 */
+	readonly output?: "spinner" | "inherit";
+	/** Tell the reader that this task may request administrator access. */
+	readonly elevated?: boolean;
 	readonly when?: (answers: A) => boolean;
 }
 

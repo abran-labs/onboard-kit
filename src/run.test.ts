@@ -199,6 +199,29 @@ describe("check", () => {
 });
 
 describe("task", () => {
+	test("inherited output yields the terminal and announces elevated work", async () => {
+		const out = sink();
+		const result = await onboard({
+			name: "MyTool",
+			interactive: "always",
+			output: out,
+			state: false,
+			nodes: [{
+				node: "task",
+				label: "Installing dependencies",
+				output: "inherit",
+				elevated: true,
+				run: () => out.write("package manager output\n"),
+			}],
+		});
+
+		expect(result.status).toBe("completed");
+		expect(out.text).toContain("Installing dependencies");
+		expect(out.text).toContain("Administrator access may be requested in this terminal.");
+		expect(out.text).toContain("package manager output");
+		expect(out.text).toContain("complete");
+	});
+
 	test("receives the collected answers", async () => {
 		let seen: unknown;
 		await onboard({
