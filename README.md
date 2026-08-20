@@ -1,4 +1,4 @@
-![Onboard Kit banner showing three connected hexagonal nodes beside the product name](.github/assets/onboard-kit-banner.svg)
+![Onboard Kit banner showing three connected hexagonal nodes beside the product name](https://raw.githubusercontent.com/abran-labs/onboard-kit/master/.github/assets/onboard-kit-banner.svg)
 
 # Onboard Kit
 
